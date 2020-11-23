@@ -1,0 +1,6 @@
+Package: lomo-backend
+Version: version-replace-me
+Maintainer: Lomoware
+Architecture: armhf
+Description: lomo backend
+Depends: sqlite3, zip, libimage-exiftool-perl, ffmpeg, rsync

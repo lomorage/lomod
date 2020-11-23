@@ -1,0 +1,17 @@
+#!/bin/bash
+set -ex
+
+chmod +x /opt/lomorage/bin/*
+
+CUR_USER=${SUDO_USER:-$(logname)}
+
+sudo -u $CUR_USER mkdir -p /opt/lomorage/var/log
+sudo -u $CUR_USER mkdir -p /opt/lomorage/etc
+
+sudo sed -i "s/User=pi/User=$CUR_USER/g" /lib/systemd/system/lomod.service
+
+if [ $(systemctl is-enabled lomod) != 'enabled' ];  then
+  systemctl enable lomod
+fi
+systemctl daemon-reload
+systemctl restart lomod
