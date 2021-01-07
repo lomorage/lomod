@@ -3,4 +3,4 @@ Version: version-replace-me
 Maintainer: Lomoware
 Architecture: armhf
 Description: lomo backend
-Depends: sqlite3, zip, libimage-exiftool-perl, ffmpeg, rsync
+Depends: sqlite3, zip, libimage-exiftool-perl, ffmpeg, rsync, lomo-vips
