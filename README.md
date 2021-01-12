@@ -2,7 +2,8 @@
 Lomod is a back-end service for personal video/photo backup, sharing and management. Check out https://lomorage.com/ for more detail about the product.
 
 **Note:** This repository only holds binary releases for Linux with below architectures: 
-- armhf: for raspberry pi user
+- armhf: for raspberry pi arm32 user
+- arm64: for raspberry pi arm64 user
 - amd64: non-pi user
 
 If you want to install on other OS, please refer https://lomorage.com/installation/
