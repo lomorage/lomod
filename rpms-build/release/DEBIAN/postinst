@@ -3,12 +3,10 @@ set -ex
 
 chmod +x /opt/lomorage/bin/*
 
-CUR_USER=${SUDO_USER:-$(logname)}
-
-sudo -u $CUR_USER mkdir -p /opt/lomorage/var/log
-sudo -u $CUR_USER mkdir -p /opt/lomorage/etc
+CUR_USER=`ls -l /opt/lomorage/bin/lomod | awk -F' ' '{print $3}'`
 
 sudo sed -i "s/User=pi/User=$CUR_USER/g" /lib/systemd/system/lomod.service
+sudo sed -i "s/pi/$CUR_USER/g" /etc/cron.daily/update-lomod
 
 if [ $(systemctl is-enabled lomod) != 'enabled' ];  then
   systemctl enable lomod
