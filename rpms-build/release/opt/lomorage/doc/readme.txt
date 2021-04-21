@@ -28,4 +28,4 @@ This is the temporary folder used for storing the temporary files uploaded.
 
 ## assets.db
 
-This is the database that store the users account, hashed/encrypted password, assets hash, metadata etc, all needed for Lomorage APP to work. 
+This is the backup database for the purpose of recovery in case disaster happens, such as SD card is broken, or DB is deleted by mistake, etc.
