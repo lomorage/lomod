@@ -3,7 +3,10 @@ set -ex
 
 chmod +x /opt/lomorage/bin/*
 
-CUR_USER=`ls -l /opt/lomorage/bin/lomod | awk -F' ' '{print $3}'`
+CUR_USER=`ls -ld /opt/lomorage/bin | awk -F' ' '{print $3}'`
+CUR_GROUP=`ls -ld /opt/lomorage/bin | awk -F' ' '{print $4}'`
+
+sudo chown $CUR_USER:$CUR_GROUP /opt/lomorage/bin/lomod /opt/lomorage/bin/lomoc
 
 sudo sed -i "s/User=pi/User=$CUR_USER/g" /lib/systemd/system/lomod.service
 sudo sed -i "s/pi/$CUR_USER/g" /etc/cron.daily/update-lomod
