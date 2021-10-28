@@ -7,7 +7,7 @@ Type=simple
 Restart=always
 RestartSec=1
 User=pi
-Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib"
+EnvironmentFile=/opt/lomorage/etc/environment
 ExecStart=/opt/lomorage/bin/lomod -b /opt/lomorage --max-upload 1 --max-fetch-preview 3
 StandardOutput=syslog
 StandardError=syslog

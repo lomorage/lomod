@@ -1,6 +1,12 @@
 #!/bin/bash
 set -ex
 
+# recover backup environment file
+if [ -f "/opt/lomorage/etc/environment.bak" ]
+then
+  cp /opt/lomorage/etc/environment.bak /opt/lomorage/etc/environment
+fi
+
 chmod +x /opt/lomorage/bin/*
 
 CUR_USER=`ls -ld /opt/lomorage/bin | awk -F' ' '{print $3}'`
