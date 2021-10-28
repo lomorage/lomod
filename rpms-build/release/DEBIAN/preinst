@@ -10,3 +10,9 @@ if [ -f "/opt/lomorage/var/assets.db" ]
 then
   cp /opt/lomorage/var/assets.db /opt/lomorage/var/assets.db.$(date +%m-%d-%y.%H.%M.%S)
 fi
+
+# backup environment file
+if [ -f "/opt/lomorage/etc/environment" ]
+then
+  cp /opt/lomorage/etc/environment /opt/lomorage/etc/environment.bak
+fi
