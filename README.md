@@ -24,11 +24,13 @@ GLOBAL OPTIONS:
    --no-mount                  this mode is mainly used at desktop version. Mount directory is what user defined when it starts lomod server, and no mount disk in this case
    --port value, -p value      (default: 8000)
    --preview-size value        list of image preview size. Multiple resolution is supported, and each is separated with ';'. Format is like <width1>x<height1>;<width2>x<height2>;... (default: "75x0;320x0")
-   --preview-size-video value  list of video preview size. Multiple resolution is supported, and each is separated with ';'. Format is like <width1>x<height1>;<width2>x<height2>;... (default: "480x0")
+   --preview-size-video value  list of video preview size. 0 means disable video preview generation. Multiple resolution is supported, and each is separated with ';'. Format is like <width1>x<height1>;<width2>x<height2>;... (default: "480x0")
    --help, -h                  show help
    --version, -v               print the version
    ```
-### Mount-dir
+### mount-dir
 Mount-dir argument is to specify the path for storing the photo / video assets. By default it is `/media` at raspberry pi, all external USB disks should also be mounted under this directory, so that `lomod` can read the list of USB disks and return to mobile client. User can also select the desired disks when user is created. The user's home path is `mount-dir + <usb disk UUID> + <user name>`.
 
 If user doesn't use external USB disk, he needs add `--no-mount` option, thus, lomod will use `mount-dir + <user name>` as user's home path.
+### preview-size-video
+Video preview generation takes more system resources. If server has less compute resource, user can specify `preview-size-video=0` to disable video preview generation
