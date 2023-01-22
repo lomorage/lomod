@@ -8,7 +8,7 @@ Restart=always
 RestartSec=1
 User=pi
 EnvironmentFile=/opt/lomorage/etc/environment
-ExecStart=/opt/lomorage/bin/lomod -b /opt/lomorage --max-upload 3 --max-fetch-preview 3 --with-mount-mon
+ExecStart=/opt/lomorage/bin/lomod -b /opt/lomorage --max-upload 3 --max-fetch-preview 3 --with-mount-mon --db-clean
 StandardOutput=syslog
 StandardError=syslog
 
