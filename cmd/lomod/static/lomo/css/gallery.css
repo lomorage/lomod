@@ -1,0 +1,302 @@
+/* Gallery & Inbox — light canvas, ledger-style chronological dividers, thumbnail grid. */
+
+.lomo-page-head h1 {
+  display: none;
+}
+
+/* Navbar styling now lives in theme.css — .lomo-navbar is the one shared
+ * component used by every page (gallery, import, inbox), not gallery-only. */
+
+#links {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--space-4) var(--space-8);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* section divider injected by gallery.js / inbox.js between date or sender groups */
+.lomo-ledger {
+  flex-basis: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 var(--space-2);
+  font-family: var(--font-ui);
+}
+
+.lomo-ledger:first-child {
+  margin-top: var(--space-2);
+}
+
+.lomo-ledger .lomo-ledger-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-600);
+  white-space: nowrap;
+}
+
+.lomo-ledger .lomo-ledger-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* Grid, not flex-wrap: fixed-width flex children left-pack and leave a
+ * ragged, uneven gap on the right whenever the row width isn't an exact
+ * multiple of the tile size (which it almost never is) — grid's auto-fill
+ * columns stretch to fill the full row evenly instead. */
+.lomo-ledger-group {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+img.lazy,
+.image-thumbnail img,
+.video-thumbnail img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.image-thumbnail,
+.video-thumbnail {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.image-thumbnail:hover,
+.video-thumbnail:hover {
+  transform: translateY(-2px) scale(1.015);
+  box-shadow: var(--shadow-md);
+}
+
+.image-thumbnail img,
+.video-thumbnail img {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.image-thumbnail img.is-loaded,
+.video-thumbnail img.is-loaded {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-thumbnail img,
+  .video-thumbnail img {
+    transition: none;
+    opacity: 1;
+  }
+}
+
+/* pure-CSS play glyph — no icon font dependency */
+.video-thumbnail:before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  content: "";
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.35);
+}
+
+.video-thumbnail:after {
+  position: absolute;
+  top: 50%;
+  left: calc(50% + 2px);
+  content: "";
+  transform: translate(-50%, -50%);
+  border-style: solid;
+  border-width: 7px 0 7px 11px;
+  border-color: transparent transparent transparent #fff;
+  opacity: 0.95;
+}
+
+.video-thumbnail:hover:before {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+#links:empty::before {
+  content: "";
+}
+
+.lomo-empty {
+  flex-basis: 100%;
+  text-align: center;
+  color: var(--ink-400);
+  padding: var(--space-8) var(--space-4);
+}
+
+.lomo-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-900);
+  margin: 0 0 var(--space-2);
+}
+
+.lomo-empty-hint {
+  max-width: 420px;
+  margin: 0 auto var(--space-5);
+}
+
+.lomo-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+/* month placeholder, shown until it scrolls near view and loads */
+.lomo-ledger-group.lomo-loading {
+  min-height: 150px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-1) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: lomo-shimmer 1.4s ease infinite;
+}
+
+.lomo-ledger-group.lomo-load-error {
+  min-height: 0;
+}
+
+@keyframes lomo-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lomo-ledger-group.lomo-loading {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .lomo-ledger-group {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+}
+
+/* ---------- Lightbox ---------- */
+
+.lomo-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 13, 28, 0.92);
+}
+
+.lomo-lightbox.is-open {
+  display: flex;
+}
+
+.lomo-lightbox-stage {
+  max-width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lomo-lightbox-stage img,
+.lomo-lightbox-stage video {
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: var(--radius-sm);
+}
+
+.lomo-lightbox-loading,
+.lomo-lightbox-error {
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.lomo-lightbox-btn {
+  position: absolute;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: var(--radius-full);
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.lomo-lightbox-btn:hover,
+.lomo-lightbox-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.lomo-lightbox-close {
+  top: var(--space-4);
+  right: var(--space-4);
+}
+
+.lomo-lightbox-delete {
+  top: var(--space-4);
+  right: calc(var(--space-4) + 56px);
+  font-size: 16px;
+}
+
+.lomo-lightbox-prev {
+  left: var(--space-4);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.lomo-lightbox-next {
+  right: var(--space-4);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* ---------- Delete confirm dialog ---------- */
+
+.lomo-confirm {
+  background: var(--surface-0);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-lg);
+  max-width: 320px;
+}
+
+.lomo-confirm::backdrop {
+  background: rgba(7, 13, 28, 0.6);
+}
+
+.lomo-confirm p {
+  margin: 0 0 var(--space-4);
+  color: var(--ink-900);
+  font-size: 14px;
+}
+
+.lomo-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

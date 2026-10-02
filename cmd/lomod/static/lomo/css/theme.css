@@ -1,0 +1,425 @@
+/*
+ * Lomorage web UI — shared design tokens & components.
+ * Brand mark uses the Memory Embrace family artwork.
+ * Paper surfaces and forest-green actions match the Lomorage homepage.
+ * Loaded on every page, after vendor CSS (Bootstrap, blueimp-gallery,
+ * fileupload) so these rules win the cascade without touching vendor files.
+ */
+
+:root {
+  /* Shared with homepage/static/css/brand.css: trust colors for actions,
+     memory colors for photographs and quiet decorative accents. */
+  --forest: #2f654e;
+  --forest-hover: #244f3d;
+  --sage: #edf1e9;
+  --coral: #e99079;
+  --lavender: #aa90c3;
+  --memory-glow: linear-gradient(135deg, #f9e8d9, #f3e5e6 62%, #eee6f1);
+
+  --ink-900: #173e37;
+  --ink-700: #24483e;
+  --ink-600: #52685b;
+  --ink-400: #63716b;
+
+  --surface-0: #fffcf7;
+  --surface-1: #fbf8f3;
+  --surface-2: #edf1e9;
+  --line: #e3e1d8;
+  --line-strong: #bdcbbb;
+
+  --success: #2f654e;
+  --danger: #b43e3e;
+  --warning: #8a5a00;
+
+  --font-ui: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: Georgia, "Times New Roman", serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(55, 68, 48, 0.06);
+  --shadow-md: 0 8px 24px -8px rgba(74, 64, 48, 0.12);
+  --shadow-lg: 0 20px 45px -12px rgba(74, 64, 48, 0.16);
+
+  --nav-height: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  line-height: 1.6;
+  font-family: var(--font-ui);
+  color: var(--ink-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--forest-hover);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------- Top navigation ----------
+ * One shared component (no Bootstrap classes/JS) used by every page. */
+
+.lomo-navbar a {
+  text-decoration: none;
+}
+
+.lomo-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  height: var(--nav-height);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+}
+
+.lomo-navbar-inner {
+  max-width: 1200px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lomo-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--nav-height);
+  padding: 0;
+  margin: 0;
+}
+
+.lomo-brand-mark {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  display: block;
+}
+
+.lomo-brand-word {
+  font-family: var(--font-ui);
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  text-transform: none;
+  color: var(--ink-900);
+}
+
+.lomo-navbar-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lomo-navbar-toggle span {
+  display: block;
+  height: 2px;
+  background: var(--ink-900);
+  border-radius: 1px;
+}
+
+.lomo-navbar-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lomo-navbar-links a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-600);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.lomo-navbar-links a svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  opacity: 0.85;
+}
+
+/* Icons earn their place in the roomier mobile drawer; in the compact
+ * desktop bar the text alone reads faster, so keep icons mobile-only. */
+@media (min-width: 901px) {
+  .lomo-navbar-links a svg {
+    display: none;
+  }
+}
+
+.lomo-navbar-links a:hover,
+.lomo-navbar-links a:focus-visible {
+  color: var(--ink-900);
+  background: var(--sage);
+}
+
+.lomo-navbar-links .lomo-logout {
+  color: var(--ink-400);
+  border-left: 1px solid var(--line);
+  margin-left: var(--space-2);
+  padding-left: var(--space-4);
+}
+
+.lomo-navbar-links .lomo-logout:hover {
+  color: var(--ink-900);
+  background: transparent;
+}
+
+body.page-gallery .lomo-navbar-links a[href="/gallery"],
+body.page-import .lomo-navbar-links a[href="/import"],
+body.page-inbox .lomo-navbar-links a[href="/inbox"],
+body.page-localimport .lomo-navbar-links a[href="/localimport"],
+body.page-users .lomo-navbar-links a[href="/users"] {
+  color: var(--ink-900);
+  background: var(--sage);
+}
+
+.lomo-navbar-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .lomo-navbar-toggle {
+    display: flex;
+  }
+
+  /* Dimmed scrim behind the open menu — without it, the dropdown just sat
+   * directly on top of the photo grid with nothing to separate "menu" from
+   * "page content", which read as the menu obscuring the page rather than
+   * floating above it. */
+  .lomo-navbar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    top: var(--nav-height);
+    z-index: 99;
+    background: rgba(7, 13, 28, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .lomo-navbar-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .lomo-navbar-links {
+    position: absolute;
+    max-height: calc(100dvh - var(--nav-height));
+    overflow-y: auto;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    background: var(--surface-0);
+    border-bottom-left-radius: var(--radius-lg);
+    border-bottom-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-2);
+    transform: translateY(-8px);
+    opacity: 0;
+    visibility: hidden;
+    transition: transform 0.18s ease, opacity 0.18s ease, visibility 0.18s;
+  }
+
+  .lomo-navbar-links.is-open {
+    transform: translateY(0);
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .lomo-navbar-links a {
+    padding: 13px var(--space-4);
+    border-radius: var(--radius-md);
+    font-size: 15px;
+  }
+
+  .lomo-navbar-links .lomo-logout {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    margin: var(--space-1) 0 0;
+    padding-top: calc(var(--space-1) + 13px);
+  }
+}
+
+body.lomo-app {
+  background: var(--surface-1);
+  padding-top: var(--nav-height);
+}
+
+body.lomo-no-scroll {
+  overflow: hidden;
+}
+
+.lomo-page-head {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-2);
+}
+
+.lomo-page-head h1 {
+  font-family: var(--font-heading);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
+  margin: 0;
+}
+
+.lomo-page-head p {
+  color: var(--ink-600);
+  margin: var(--space-1) 0 0;
+  font-size: 14px;
+}
+
+/* ---------- Buttons (retint Bootstrap contextual classes) ---------- */
+
+.btn {
+  border-radius: var(--radius-md);
+  padding: 9px 16px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-sm);
+  text-shadow: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease,
+    background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.btn:hover,
+.btn:focus {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn .glyphicon {
+  margin-right: 6px;
+  top: 1px;
+}
+
+.btn-info,
+.btn-primary {
+  background: var(--forest);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px -4px rgba(47, 101, 78, 0.18);
+}
+
+.btn-info:hover,
+.btn-info:focus,
+.btn-primary:hover,
+.btn-primary:focus {
+  background: var(--forest-hover);
+  border-color: var(--forest-hover);
+  color: #fff;
+  box-shadow: 0 6px 18px -4px rgba(47, 101, 78, 0.24);
+}
+
+.btn-success {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+.btn-success:hover,
+.btn-success:focus {
+  background: var(--forest-hover);
+  border-color: var(--forest-hover);
+  color: #fff;
+}
+
+.btn-warning {
+  background: var(--surface-0);
+  border-color: var(--line-strong);
+  color: var(--ink-700);
+  box-shadow: none;
+}
+
+.btn-warning:hover,
+.btn-warning:focus {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+  color: var(--ink-700);
+}
+
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover,
+.btn-danger:focus {
+  background: #c9383d;
+  border-color: #c9383d;
+  color: #fff;
+}
+
+/* Keep Bootstrap's active/disabled states in the same action palette. */
+.btn.btn-primary:active, .btn.btn-info:active, .btn.btn-success:active,
+.btn.btn-primary:disabled, .btn.btn-info:disabled, .btn.btn-success:disabled {
+  background: var(--forest-hover);
+  border-color: var(--forest-hover);
+  color: #fff;
+}
+.btn:disabled, .btn.disabled { opacity: .6; transform: none; cursor: not-allowed; }
+button, input, select, textarea { font: inherit; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--forest); }
+a:hover { color: var(--forest-hover); }
+::selection { background: #f2d4c5; color: var(--ink-900); }

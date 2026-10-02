@@ -1,0 +1,30 @@
+# Builds libvips from source natively against a given Ubuntu release's own
+# library stack (webp/tiff/ImageMagick etc.), so the resulting lomo-vips
+# package's baked-in SONAME requirements (e.g. libwebp.so.7) actually exist
+# on that release -- reusing the Debian-buster-built lomo-vips on Ubuntu
+# fails because Ubuntu bumped those libraries to incompatible SONAMEs.
+# Build with --build-arg BASE_IMAGE=ubuntu:22.04 (jammy) or ubuntu:24.04 (noble).
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config curl ca-certificates \
+    libglib2.0-dev libexpat1-dev libfftw3-dev libmagickcore-dev \
+    liborc-0.4-dev liblcms2-dev libheif-dev zlib1g-dev libwebp-dev \
+    libtiff-dev libpng-dev libimagequant-dev libjpeg-turbo8-dev \
+    libexif-dev libgsf-1-dev libxml2-dev libde265-dev libopenjp2-7-dev \
+    libsqlite3-dev
+
+ARG VIPS_VERSION=8.12.2
+RUN set -ex; \
+    curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \
+    mkdir /tmp/vips-src; \
+    tar -C /tmp/vips-src --strip-components=1 -xzf /tmp/vips.tar.gz; \
+    cd /tmp/vips-src; \
+    ./configure --prefix=/usr/local --disable-gtk-doc-html --disable-gtk-doc; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    rm -rf /tmp/vips-src /tmp/vips.tar.gz

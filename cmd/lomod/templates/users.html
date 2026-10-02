@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{gettext "Users"}}</title>
+    <meta name="description" content="Create new Lomorage accounts and share sign-in QR codes"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="static/lomo/img/favicon.ico?v=memory-embrace-1" type="image/x-icon" />
+    <link rel="stylesheet" type="text/css" href="static/lomo/css/theme.css?v=memory-style-1">
+    <link rel="stylesheet" type="text/css" href="static/lomo/css/users.css?v=memory-style-1">
+    <script src="static/polyglot/polyglot.min.js"></script>
+    <script src="static/lomo/js/i18n.js"></script>
+  </head>
+  <body class="lomo-app page-users">
+    <nav class="lomo-navbar">
+      <div class="lomo-navbar-inner">
+        <a class="lomo-brand" href="https://lomorage.com">
+          <img src="static/lomo/img/logo-64.png?v=memory-embrace-1" alt="" class="lomo-brand-mark">
+          <span class="lomo-brand-word">lomorage</span>
+        </a>
+        <button type="button" class="lomo-navbar-toggle" aria-label="Menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <ul class="lomo-navbar-links">
+          <li><a href="/gallery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>{{gettext "Gallery"}}</a></li>
+          <li><a href="/import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>{{gettext "Upload"}}</a></li>
+          <li><a href="/inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>{{gettext "Inbox"}}</a></li>
+          <li><a href="/localimport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>{{gettext "Local Import"}}</a></li>
+          <li><a href="/users" class="is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>{{gettext "Users"}}</a></li>
+          <li><a href="#" id="logout" class="lomo-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>{{gettext "Logout"}}</a></li>
+        </ul>
+      </div>
+      <div class="lomo-navbar-backdrop"></div>
+    </nav>
+    <div class="lomo-page-head">
+      <h1>{{gettext "Users"}}</h1>
+      <p>{{gettext "Add a new account to this Lomorage instance."}}</p>
+    </div>
+
+    <div class="users-page">
+      <section class="users-card users-accounts-panel">
+        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>{{gettext "Accounts"}}</h2>
+        <div id="users-list"></div>
+      </section>
+
+      <section class="users-card">
+        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>{{gettext "New User"}}</h2>
+        <form id="users-create-form">
+          <div class="users-form-group">
+            <label for="users-new-username">{{gettext "Username"}}</label>
+            <input type="text" id="users-new-username" class="users-input" autocomplete="username">
+            <small class="users-hint">{{gettext "Letters, numbers, hyphens, and underscores only. Must start with a letter."}}</small>
+          </div>
+          <div class="users-form-group">
+            <label for="users-new-password">{{gettext "Password"}}</label>
+            <input type="password" id="users-new-password" class="users-input" autocomplete="new-password">
+            <small class="users-hint">{{gettext "At least 6 characters."}}</small>
+          </div>
+          <div class="users-form-group">
+            <label for="users-new-confirm-password">{{gettext "Confirm Password"}}</label>
+            <input type="password" id="users-new-confirm-password" class="users-input" autocomplete="new-password">
+          </div>
+          <div class="users-form-group">
+            <label for="users-new-disk">{{gettext "Storage Location"}}</label>
+            <select id="users-new-disk" class="users-input"></select>
+          </div>
+          <div id="users-create-error" class="users-status is-error" hidden></div>
+          <button type="submit" class="btn btn-primary">{{gettext "Create Account"}}</button>
+        </form>
+      </section>
+
+      <section class="users-card">
+        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/><rect x="14" y="18" width="3" height="0.01"/><rect x="18" y="14" width="0.01" height="3"/></svg>{{gettext "Share Sign-In QR Code"}}</h2>
+        <p class="users-hint">{{gettext "Generate a QR code so they can scan it in the Lomorage app and sign in instantly -- for a user you just created above, or any existing account."}}</p>
+        <form id="users-qr-form">
+          <div class="users-form-group">
+            <label for="users-qr-username">{{gettext "Username"}}</label>
+            <input type="text" id="users-qr-username" class="users-input" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="users-form-group">
+            <label for="users-qr-password">{{gettext "Password"}}</label>
+            <input type="password" id="users-qr-password" class="users-input" autocomplete="off">
+          </div>
+          <button type="submit" class="btn btn-info">{{gettext "Show QR Code"}}</button>
+        </form>
+        <div id="users-qr-result" class="users-qr-result" hidden>
+          <div id="users-qr-canvas" class="users-qr-canvas"></div>
+          <p class="users-hint">{{gettext "Open Lomorage on their phone and tap Scan to Sign In."}}</p>
+        </div>
+      </section>
+    </div>
+
+    <script src="static/lomo/js/conf.js"></script>
+    <script src="static/lomo/js/nav.js"></script>
+    <script src="static/jquery/jquery.min.js"></script>
+    <script src="static/lomo/js/argon2-client.js"></script>
+    <script src="static/qrcodejs/qrcode.js"></script>
+    <script src="static/lomo/js/users.js?v=memory-style-1"></script>
+
+    <center style="padding: 0;margin:0;list-style: none">
+        {{.Foot}}
+    </center>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+language: go
+go:
+  - "1.10.3"
+
+before_install:
+  - sudo apt-get -qq update
+  - go get -t ./...
+
+script:
+  #- go test ./v2 -v -check.vv
+  - go install ./...
+  - make check

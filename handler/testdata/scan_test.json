@@ -1,0 +1,23 @@
+{
+ "Name": "scan_test",
+ "Flag": 1,
+ "Children": [
+  {
+   "Name": "video",
+   "Flag": 3,
+   "CreateTime": "2021-01-03T01:37:29Z",
+   "EarliestTime": "2013-08-08T08:08:08Z",
+   "LatestTime": "2021-01-03T01:37:29Z"
+  },
+  {
+   "Name": "图片",
+   "Flag": 3,
+   "CreateTime": "2021-01-03T06:50:36Z",
+   "EarliestTime": "2003-01-17T12:00:00Z",
+   "LatestTime": "2021-01-03T06:50:36Z"
+  }
+ ],
+ "CreateTime": "2021-01-03T06:21:08Z",
+ "EarliestTime": "2003-01-17T12:00:00Z",
+ "LatestTime": "2021-01-03T06:50:36Z"
+}

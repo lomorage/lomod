@@ -1,0 +1,56 @@
+[
+    {
+      "Category": "geo",
+      "SourceDevice": "android",
+      "AssetID": 1,
+      "Name": "city",
+      "Value": "san jose",
+      "Model": "tensorflow",
+      "Version": 1
+    },
+    {
+      "Category": "geo",
+      "SourceDevice": "ios",
+      "AssetID": 2,
+      "Name": "city",
+      "Value": "sfo",
+      "Model": "tensorflow",
+      "Version": 1
+    },
+    {
+      "Category": "geo",
+      "SourceDevice": "ios",
+      "AssetID": 2,
+      "Name": "poi",
+      "Value": "museum",
+      "Model": "tensorflow",
+      "Version": 2
+    },
+    {
+      "Category": "geo",
+      "SourceDevice": "android",
+      "AssetID": 3,
+      "Name": "city",
+      "Value": "sanjose",
+      "Model": "tensorflow",
+      "Version": 1
+    },
+    {
+      "Category": "geo",
+      "SourceDevice": "ios",
+      "AssetID": 3,
+      "Name": "poi",
+      "Value": "动物园",
+      "Model": "tensorflow",
+      "Version": 1
+    },
+    {
+      "Category": "face",
+      "SourceDevice": "android",
+      "AssetID": 4,
+      "Name": "people",
+      "Value": "alice",
+      "Model": "tensorflow",
+      "Version": 1
+    }
+  ]

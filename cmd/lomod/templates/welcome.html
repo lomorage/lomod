@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="shortcut icon" href="static/lomo/img/favicon.ico?v=memory-embrace-1" type="image/x-icon" />
+        <link href="static/bootstrap-4.3.1/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+        <link rel="stylesheet" type="text/css" href="static/lomo/css/theme.css?v=memory-style-1">
+        <link rel="stylesheet" type="text/css" href="static/lomo/css/main.css?v=memory-style-1">
+        <script src="static/jquery/jquery.min.js"></script>
+        <script src="static/bootstrap-4.3.1/js/bootstrap.min.js"></script>
+        <script src="static/polyglot/polyglot.min.js"></script>
+        <script src="static/lomo/js/i18n.js"></script>
+        <title>{{gettext "Set up Lomorage"}}</title>
+    </head>
+    <body>
+        <div id="login">
+            <img src="static/lomo/img/logo-128.png?v=memory-embrace-1" alt="" class="lomo-login-mark">
+            <h3 class="lomo-login-title">{{gettext "Lomorage Gallery"}}<span class="lomo-login-sub">{{gettext "Set up Lomorage"}}</span></h3>
+            <div class="container">
+                <!--
+                Scan (QR) and manual signup are two views of the same choice, not two
+                things to scroll past -- only one shows at a time (mirrors the toggle in
+                lomo-mobile's LoginScreen.js), so neither is hidden below the fold on a
+                short/mobile viewport.
+                -->
+                <div class="row justify-content-center align-items-center" id="welcome-scan-section">
+                    <div class="col-md-6 text-center">
+                        <div class="lomo-card">
+                            <p>{{gettext "Scan this code with your phone's camera to connect and create your account. If the Lomorage app isn't installed yet, you'll be shown where to get it."}}</p>
+                            <img src="/welcome/qrcode.png" alt="Setup QR code" style="width:256px;max-width:100%;height:auto;margin:16px auto;display:block;">
+                            <p style="margin-top:16px;">
+                                {{gettext "Or enter this address manually in the app:"}}
+                                <br><strong id="setup-server-address">&hellip;</strong>
+                            </p>
+                            <p><a href="#" id="show-manual-signup">{{gettext "No phone handy? Create your account on this page instead"}}</a></p>
+                            <p style="margin-bottom:0;"><a href="/">{{gettext "Already have an account? Log in"}}</a></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="row justify-content-center align-items-center" id="welcome-signup-section" style="display:none;">
+                    <div class="col-md-6">
+                        <div class="lomo-card">
+                            <p><a href="#" id="show-qr">&larr; {{gettext "Back to the QR code"}}</a></p>
+                            <form id="signup-form">
+                                <div class="form-group">
+                                    <label for="signup-username">{{gettext "Username"}}</label>
+                                    <input type="text" id="signup-username" class="form-control" autocomplete="username">
+                                    <small class="form-text text-muted">{{gettext "Letters, numbers, hyphens, and underscores only. Must start with a letter."}}</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="signup-password">{{gettext "Password"}}</label>
+                                    <input type="password" id="signup-password" class="form-control" autocomplete="new-password">
+                                    <small class="form-text text-muted">{{gettext "At least 6 characters."}}</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="signup-confirm-password">{{gettext "Confirm Password"}}</label>
+                                    <input type="password" id="signup-confirm-password" class="form-control" autocomplete="new-password">
+                                </div>
+                                <div class="form-group">
+                                    <label for="signup-disk">{{gettext "Storage Location"}}</label>
+                                    <select id="signup-disk" class="form-control"></select>
+                                    <small class="form-text text-muted">{{gettext "Where your photos and videos will be stored on this computer."}}</small>
+                                </div>
+                                <div id="signup-error" class="text-danger" style="display:none;margin-bottom:10px;"></div>
+                                <div class="form-group text-center">
+                                    <input type="submit" id="signup-submit" class="btn btn-info btn-md" value="{{gettext "Create Account"}}">
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="lomo-foot">{{.Foot}}</div>
+        </div>
+
+        <script src="static/lomo/js/conf.js"></script>
+        <script src="static/lomo/js/argon2-client.js"></script>
+        <script src="static/lomo/js/signup.js"></script>
+        <script>
+            fetch('/welcome/info').then(function (r) { return r.json(); }).then(function (info) {
+                document.getElementById('setup-server-address').textContent = info.Server;
+            }).catch(function () {});
+
+            document.getElementById('show-manual-signup').addEventListener('click', function (e) {
+                e.preventDefault();
+                document.getElementById('welcome-scan-section').style.display = 'none';
+                document.getElementById('welcome-signup-section').style.display = 'flex';
+            });
+            document.getElementById('show-qr').addEventListener('click', function (e) {
+                e.preventDefault();
+                document.getElementById('welcome-signup-section').style.display = 'none';
+                document.getElementById('welcome-scan-section').style.display = 'flex';
+            });
+        </script>
+    </body>
+</html>

@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ex
+
+chmod +x /opt/lomorage/bin/*
+
+if [ $(systemctl is-enabled lomocloud) != 'enabled' ];  then
+  systemctl enable lomocloud
+fi
+systemctl daemon-reload || true
+systemctl restart lomocloud || true

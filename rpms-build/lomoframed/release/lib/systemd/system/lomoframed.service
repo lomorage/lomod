@@ -1,0 +1,15 @@
+[Unit]
+Description=Lomo Frame Client 
+After=network.target[Service]
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=pi
+ExecStart=/opt/lomorage/bin/lomoframed -b /opt/lomorage
+StandardOutput=syslog
+StandardError=syslog[Install]
+
+[Install]
+WantedBy=multi-user.target

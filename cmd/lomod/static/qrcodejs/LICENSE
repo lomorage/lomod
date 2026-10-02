@@ -1,0 +1,16 @@
+Vendored from https://github.com/davidshimjs/qrcodejs (commit 04f46c6a0708418cb7b96fc563eacae0fbf77674).
+
+MIT License
+
+QRCode for JavaScript
+
+Copyright (c) 2009 Kazuhiko Arase
+
+URL: http://www.d-project.com/
+
+Licensed under the MIT license:
+  http://www.opensource.org/licenses/mit-license.php
+
+The word "QR Code" is registered trademark of
+DENSO WAVE INCORPORATED
+  http://www.denso-wave.com/qrcode/faqpatent-e.html

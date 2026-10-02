@@ -1,0 +1,120 @@
+/* Import — upload dropzone card, restyled file list, themed progress bar. */
+
+.lomo-page-head p {
+  max-width: 640px;
+}
+
+.container blockquote.description {
+  display: none;
+}
+
+.lomo-upload-card {
+  max-width: 1200px;
+  margin: 0 auto var(--space-8);
+  padding: 0 var(--space-4);
+}
+
+.fileupload-buttonbar {
+  background: var(--surface-0);
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-4);
+  margin: 0 0 var(--space-4);
+  box-shadow: var(--shadow-sm);
+  align-items: center;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.fileupload-buttonbar:hover {
+  border-color: var(--forest);
+  background: linear-gradient(180deg, rgba(47, 101, 78, 0.04), transparent);
+}
+
+.fileupload-buttonbar .btn {
+  margin-right: var(--space-2);
+}
+
+.fileupload-buttonbar .fileinput-button {
+  position: relative;
+  overflow: hidden;
+}
+
+/* native checkbox, modernized without a full custom-built control */
+.fileupload-buttonbar input[type="checkbox"],
+.files input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--forest);
+  cursor: pointer;
+}
+
+.lomo-upload-card .progress {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.lomo-upload-card .progress-bar {
+  background: linear-gradient(135deg, var(--forest), var(--forest-hover));
+  box-shadow: none;
+}
+
+.files .progress {
+  width: 200px;
+  margin-top: var(--space-1);
+}
+
+.fileupload-progress .progress-extended {
+  color: var(--ink-600);
+  font-size: 12px;
+  margin-top: var(--space-1);
+}
+
+table.table.table-striped {
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+table.table.table-striped > tbody > tr {
+  background: var(--surface-0);
+}
+
+table.table.table-striped > tbody > tr:nth-of-type(odd) {
+  background: var(--surface-1);
+}
+
+table.table.table-striped td {
+  vertical-align: middle;
+  border-top: 1px solid var(--line);
+  padding: var(--space-3);
+}
+
+table.table.table-striped > tbody > tr {
+  transition: background-color 0.12s ease;
+}
+
+table.table.table-striped > tbody > tr:hover {
+  background: var(--surface-2);
+}
+
+.files .preview img {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.files .name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-700);
+  word-break: break-all;
+}
+
+.files .size {
+  color: var(--ink-400);
+  font-size: 12px;
+}

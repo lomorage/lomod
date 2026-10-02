@@ -1,0 +1,104 @@
+{
+ "Name": "video",
+ "Flag": 3,
+ "Children": [
+  {
+   "Name": "lomo_orig_sha.mov",
+   "Flag": 0,
+   "CreateTime": "2020-05-21T05:42:37Z"
+  },
+  {
+   "Name": "rotate_0.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_0.png",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_0_scale.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_180.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_180.png",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_180_scale.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_270.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_270.png",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_270_scale.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_90.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_90.png",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_90_scale.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_notag.mov",
+   "Flag": 0,
+   "CreateTime": "2020-03-29T06:26:10Z"
+  },
+  {
+   "Name": "rotate_notag_scale.mov",
+   "Flag": 0,
+   "CreateTime": "2020-05-21T07:04:43Z"
+  },
+  {
+   "Name": "sample.3gp",
+   "Flag": 0,
+   "CreateTime": "2020-04-18T21:50:35Z"
+  },
+  {
+   "Name": "slow_motion.mov",
+   "Flag": 4,
+   "CreateTime": "2019-11-05T04:46:58Z"
+  },
+  {
+   "Name": "true_2013_08_08.mp4",
+   "Flag": 4,
+   "CreateTime": "2013-08-08T08:08:08Z"
+  },
+  {
+   "Name": "true_2013_08_08_rotate.mp4",
+   "Flag": 4,
+   "CreateTime": "2013-08-08T08:08:08Z"
+  }
+ ],
+ "CreateTime": "2021-01-03T01:37:29Z",
+ "EarliestTime": "2013-08-08T08:08:08Z",
+ "LatestTime": "2021-01-03T01:37:29Z"
+}

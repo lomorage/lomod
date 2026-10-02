@@ -1,0 +1,68 @@
+Name: lomo-backend
+Version: %{_lomo_version}
+Release: 1%{?dist}
+Summary: lomo backend
+License: Proprietary
+BuildArch: x86_64
+Requires: %{_lomo_requires}
+
+%description
+Lomorage Photo Assistant backend.
+
+%install
+mkdir -p %{buildroot}
+cp -a %{_lomo_buildroot}/* %{buildroot}/
+
+%files
+%attr(0755, root, root) /opt/lomorage/bin/lomod
+%attr(0755, root, root) /opt/lomorage/bin/lomoc
+%dir /opt/lomorage/var
+%config(noreplace) /opt/lomorage/var/world.db
+%dir /opt/lomorage/etc
+%config(noreplace) /opt/lomorage/etc/environment
+/opt/lomorage/doc/readme.txt
+/opt/lomorage/doc/说明.txt
+/lib/systemd/system/lomod.service
+/lib/systemd/system/lomod-update.service
+/lib/systemd/system/lomod-update.timer
+%attr(0755, root, root) /opt/lomorage/bin/update-lomod
+
+%pre
+DB=/opt/lomorage/var/assets.db
+# Only back up assets.db if this release will actually migrate it: compare
+# the live schema version against the version this package ships (baked in
+# at build time below). Avoids an unconditional full-file copy (can be
+# hundreds of MB) on every routine upgrade, most of which don't touch the DB
+# schema at all. Falls back to always backing up if the check can't be done.
+NEED_DB_BACKUP=1
+if [ -f "$DB" ] && command -v sqlite3 >/dev/null 2>&1; then
+  NEW_VERSION=%{_lomo_schema_version}
+  # .timeout rides out transient SQLITE_BUSY from lomod's own writes instead
+  # of failing the read outright (assets.db is a live, actively-written DB).
+  CURR_VERSION=$(sqlite3 "$DB" ".timeout 3000" "select latest from schema_migrations order by latest desc limit 1;" 2>/dev/null)
+  if [ -n "$CURR_VERSION" ] && [ "$CURR_VERSION" -ge "$NEW_VERSION" ] 2>/dev/null; then
+    NEED_DB_BACKUP=0
+  fi
+fi
+if [ -f "/lib/systemd/system/lomod.service" ]; then
+  systemctl stop lomod || true
+fi
+if [ "$NEED_DB_BACKUP" = "1" ] && [ -f "$DB" ]; then
+  cp "$DB" "/opt/lomorage/var/assets.db.$(date +%%m-%%d-%%y.%%H.%%M.%%S)"
+fi
+
+%post
+if [ -f "/opt/lomorage/etc/environment.bak" ]; then
+  cp /opt/lomorage/etc/environment.bak /opt/lomorage/etc/environment
+fi
+chmod +x /opt/lomorage/bin/*
+CUR_USER=$(ls -ld /opt/lomorage/bin | awk -F' ' '{print $3}')
+CUR_GROUP=$(ls -ld /opt/lomorage/bin | awk -F' ' '{print $4}')
+chown "$CUR_USER:$CUR_GROUP" /opt/lomorage/bin/lomod /opt/lomorage/bin/lomoc
+sed -i "s/User=pi/User=$CUR_USER/g" /lib/systemd/system/lomod.service
+systemctl daemon-reload
+systemctl enable lomod || true
+systemctl restart lomod || true
+# Daily maintenance/update job (used to be /etc/cron.daily/update-lomod).
+systemctl enable lomod-update.timer || true
+systemctl start lomod-update.timer || true

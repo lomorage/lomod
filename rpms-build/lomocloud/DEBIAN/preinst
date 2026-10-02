@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ -f "/lib/systemd/system/lomocloud.service" ]
+then
+  systemctl stop lomocloud
+fi
+
+# backup database
+if [ -f "/opt/lomorage/var/records.db" ]
+then
+  cp /opt/lomorage/var/records.db /opt/lomorage/var/records.db.$(date +%m-%d-%y.%H.%M.%S)
+fi

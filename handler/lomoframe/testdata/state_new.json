@@ -1,0 +1,11 @@
+{
+    "Port": 0,
+    "BaseDir": "/opt/lomorage",
+    "LogDir": "/opt/lomorage/var/log",
+    "MntDir": "/opt/lomorage/mnt",
+    "ConfDir": "/opt/lomorage/etc",
+    "Username": "lomoframe-0xxx",
+    "Password": "zbst5tdl",
+    "LomodURL": "",
+    "Token": "623951741"
+  }

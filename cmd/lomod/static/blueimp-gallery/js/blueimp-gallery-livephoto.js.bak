@@ -1,0 +1,123 @@
+/*
+ * blueimp Gallery Video Factory JS
+ * https://github.com/blueimp/Gallery
+ *
+ * Copyright 2013, Sebastian Tschan
+ * https://blueimp.net
+ *
+ * Licensed under the MIT license:
+ * https://opensource.org/licenses/MIT
+ */
+
+/* global define */
+
+;(function(factory) {
+    'use strict'
+    if (typeof define === 'function' && define.amd) {
+      // Register as an anonymous AMD module:
+      define(['./blueimp-helper', './blueimp-gallery'], factory)
+    } else {
+      // Browser globals:
+      factory(window.blueimp.helper || window.jQuery, window.blueimp.Gallery)
+    }
+  })(function($, Gallery) {
+    'use strict'
+  
+    var model = (function() {
+		var URL = window.webkitURL || window.mozURL || window.URL;
+
+		return {
+			getEntries : function(url, onend) {
+				zip.createReader(new zip.HttpReader(url, true), function(zipReader) {
+					zipReader.getEntries(onend);
+				}, onerror);
+			},
+			getEntryFile : function(entry, onend, onprogress) {
+				var writer, zipFileEntry
+
+				function getData() {
+					entry.getData(writer, function(blob) {
+						var blobURL = URL.createObjectURL(blob);
+						onend(blobURL);
+					}, onprogress);
+				}
+			    writer = new zip.BlobWriter();
+			    getData();
+			}
+		};
+	})();
+
+    $.extend(Gallery.prototype.options, {
+    })
+  
+    var handleSlide = Gallery.prototype.handleSlide
+  
+    $.extend(Gallery.prototype, {
+      handleSlide: function(index) {
+        handleSlide.call(this, index)
+      },
+  
+      livephotoFactory: function(obj, callback) {
+        var that = this
+        var options = this.options
+        var liphContainerNode = this.elementPrototype.cloneNode(false);
+        var errorArgs = [
+          {
+            type: 'error',
+            target: liphContainerNode
+          }
+        ]
+        //var livephoto = document.createElement('div')
+        //var livephoto = liphContainerNode
+        //livephoto.setAttribute("data-live-photo", "");
+        //livephoto.setAttribute("style", "width: 320px; height: 320px");
+        //livephoto.setAttribute("data-live-photo", "");
+        
+        var livephoto = document.createElement('img')
+
+        var url = this.getItemProperty(obj, options.urlProperty)
+        var title = this.getItemProperty(obj, options.titleProperty)
+        if (title) {
+            liphContainerNode.title = title
+        }
+
+		model.getEntries(url, function(entries) {
+			entries.forEach(function(entry) {
+                var ext = entry.filename.split('.').pop().toLowerCase();
+                if (ext == 'jpg') {
+                    model.getEntryFile(entry, function(blobURL) {
+                        //livephoto.setAttribute("data-photo-src", blobURL);
+                        livephoto.setAttribute("src", blobURL);
+		        	});
+                } else if (ext == 'mov') {
+                    model.getEntryFile(entry, function(blobURL) {
+                        //livephoto.setAttribute("data-video-src", blobURL);
+                        livephoto.setAttribute("data-live-photo", blobURL);
+		        	});
+                } else if (ext == 'heic') {
+
+                }
+            });
+
+            var elems = LivePhotos.initialize()
+            elems.forEach(function(ele) {
+                //ele.load();
+                ele.play();
+            })
+            
+            that.setTimeout(callback, [
+                {
+                  type: 'load',
+                  target: liphContainerNode
+                }
+            ])
+        });
+        
+        liphContainerNode.appendChild(livephoto)
+        return liphContainerNode
+      }
+    })
+  
+    return Gallery
+  })
+  

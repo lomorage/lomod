@@ -1,0 +1,28 @@
+Name: lomo-vips
+Version: %{_lomo_vips_version}
+Release: 1%{?dist}
+Summary: libvips package required by lomorage
+License: LGPL-2.1-or-later
+BuildArch: x86_64
+Requires: %{_lomo_requires}
+# AutoReq/AutoProv left on: lomo-backend's Requires on libvips.so.42 needs
+# the auto-Provides, and vips's own shared-lib deps (libgsf, libheif,
+# libMagickCore, ...) need the auto-Requires so installing lomo-vips pulls
+# them in from the base repo.
+
+%description
+libvips, built from source, plus the CLI tools.
+
+%install
+mkdir -p %{buildroot}
+cp -a %{_lomo_buildroot}/* %{buildroot}/
+
+%files
+/usr/local/*
+/etc/ld.so.conf.d/lomo-vips.conf
+
+%post
+ldconfig
+
+%postun
+ldconfig

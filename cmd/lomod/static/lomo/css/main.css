@@ -1,0 +1,172 @@
+/* Login and setup — warm paper, sunset glow and a quiet ivory card. */
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(560px circle at 18% 12%, rgba(249, 209, 174, 0.42), transparent 60%),
+    radial-gradient(620px circle at 84% 78%, rgba(218, 197, 233, 0.32), transparent 60%),
+    var(--surface-1);
+}
+
+#login {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+.lomo-login-mark {
+  display: block;
+  width: 84px;
+  height: 84px;
+  border-radius: 22px;
+  margin: 0 auto var(--space-4);
+  box-shadow: var(--shadow-lg);
+}
+
+#login h3.lomo-login-title {
+  color: var(--ink-900);
+  text-align: center;
+  font-family: var(--font-heading);
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-6);
+}
+
+#login h3.lomo-login-title .lomo-login-sub {
+  font-family: var(--font-ui);
+  display: block;
+  margin-top: var(--space-1);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ink-400);
+}
+
+#login .container #login-row #login-column #login-box {
+  margin: 0 auto;
+  max-width: 380px;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-0);
+  box-shadow: var(--shadow-lg);
+}
+
+#login .container #login-row #login-column #login-box #login-form {
+  padding: var(--space-6) var(--space-5) var(--space-5);
+}
+
+/* Same ivory panel as #login-box above, as a reusable class for pages
+   (like welcome.html) that don't have that exact nested #login-row/#login-column
+   ID chain in their markup. */
+.lomo-card {
+  margin: 0 auto;
+  max-width: 380px;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-0);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  color: var(--ink-700);
+}
+
+#login-form h3.text-info,
+#signup-form h3.text-info {
+  display: none;
+}
+
+#login-form label,
+#signup-form label {
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  margin-bottom: var(--space-1);
+}
+
+#login-form .form-group,
+#signup-form .form-group {
+  margin-bottom: var(--space-4);
+}
+
+#login-form .form-control,
+#signup-form .form-control {
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-900);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  height: auto;
+  box-shadow: none;
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+#login-form .form-control::placeholder,
+#signup-form .form-control::placeholder {
+  color: var(--ink-400);
+}
+
+#login-form .form-control:focus,
+#signup-form .form-control:focus {
+  background: #fff;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 3px rgba(47, 101, 78, 0.16);
+  color: var(--ink-900);
+}
+
+/* Keep native option menus readable on their light system background. */
+#signup-form select.form-control option {
+  color: #1a1a1a;
+  background: #fff;
+}
+
+#signup-form .form-text.text-muted {
+  color: var(--ink-400);
+}
+
+#login-form .form-group.text-center,
+#signup-form .form-group.text-center {
+  margin-top: var(--space-5);
+  margin-bottom: 0;
+}
+
+#login-form #submit.btn,
+#signup-form #signup-submit.btn {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+}
+
+#login-form #submit.btn.is-loading,
+#signup-form #signup-submit.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+#login .lomo-foot {
+  text-align: center;
+  color: var(--ink-400);
+  font-size: 12px;
+  margin-top: var(--space-6);
+}
+
+.lomo-card a { text-decoration: underline; text-underline-offset: 3px; }
+#setup-server-address { overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  #login { padding: 32px 12px; }
+  #login h3.lomo-login-title { font-size: 28px; }
+  #login .container #login-row #login-column #login-box #login-form {
+    padding: 24px 8px;
+  }
+}

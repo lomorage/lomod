@@ -1,0 +1,12 @@
+#!/bin/bash
+set -ex
+
+chmod +x /opt/lomorage/bin/*
+
+sudo sed -i "s/User=pi/User=$CUR_USER/g" /lib/systemd/system/lomoframed.service
+
+if [ $(systemctl is-enabled lomoframed) != 'enabled' ];  then
+  systemctl enable lomoframed
+fi
+systemctl daemon-reload
+systemctl restart lomoframed

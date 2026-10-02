@@ -1,0 +1,28 @@
+LATEST_RELEASE
+.DS_Store
+/dist-windows/
+/windows-deps/
+/*.zip
+/*.zip.sha256
+/cmd/lomoc/lomoc
+/cmd/lomoc/lomoc.exe
+/cmd/lomocloud/lomocloud
+/cmd/lomocloud/lomocloud.exe
+/cmd/lomod/lomod
+/cmd/lomod/lomod.exe
+/cmd/lomoframed/lomoframed
+/cmd/lomoframed/lomoframed.exe
+/cmd/lomoupg/lomoupg
+/cmd/lomoupg/lomoupg.exe
+/cmd/lomod/webapp-src/node_modules/
+/releases/
+/scripts/cross-build-rpi/amd64/out/
+/handler/rice-box.go
+# Local, per-machine default for `make release-macos`/`release-macos-amd64`'s
+# MACOS_SIGN_IDENTITY -- see the Makefile comment above that var. Not committed since a
+# different build machine would have a different cert; this just saves whoever's building on
+# *this* machine from needing to know/paste the identity string every time.
+/.macos-sign-identity
+# Same for the notarytool keychain profile scripts/release-all.sh notarizes macOS builds with.
+/.macos-notary-profile
+/.test-release-all.out

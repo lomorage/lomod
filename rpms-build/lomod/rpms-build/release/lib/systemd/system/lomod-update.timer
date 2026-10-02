@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Lomorage maintenance and update check
+
+[Timer]
+OnCalendar=*-*-* 06:25:00
+# Catch up after boot if the machine was off at the scheduled time. cron.daily, which this
+# replaces, only did that on systems that happen to have anacron installed.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

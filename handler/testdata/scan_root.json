@@ -1,0 +1,16 @@
+{
+ "Name": "/tmp/usbdisk1",
+ "Flag": 1,
+ "Children": [
+  {
+   "Name": "scan_test",
+   "Flag": 1,
+   "CreateTime": "2021-01-03T06:21:08Z",
+   "EarliestTime": "2003-01-17T12:00:00Z",
+   "LatestTime": "2021-01-03T06:50:36Z"
+  }
+ ],
+ "CreateTime": "2021-01-03T06:21:08Z",
+ "EarliestTime": "2003-01-17T12:00:00Z",
+ "LatestTime": "2021-01-03T06:50:36Z"
+}

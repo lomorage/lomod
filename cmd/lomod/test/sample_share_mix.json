@@ -1,0 +1,14 @@
+{
+    "Records": [
+     {
+         "AssetID": "575db2e474109f982ead09e7f8676680a679c9c0",
+         "AssetIDType": 1,
+         "ReceiverID": 2,
+         "Type": 0
+     },
+     {
+         "AssetID": "2.jpg",
+         "ReceiverID": 2,
+         "Type": 1
+     }]
+}

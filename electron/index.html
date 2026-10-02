@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Photo</title>
+</head>
+<body>
+
+<div style = "width:100%">
+
+    <div style = "background-color:#b5dcb3; width:100%">
+        <table border = "1">
+            <tr>
+                <td>
+                    <div class="slidecontainer">
+                        <input type="range" min="1" max="100" value="50" class="slider" id="myRange">
+                    </div>
+                </td>
+                <td>Photos</td>
+                <td>Moments</td>
+                <td>Collections</td>
+                <td>Years</td>
+            </tr>
+        </table>
+    </div>
+
+    <div style = "background-color:#aaa;  float:left;">
+        <table border = "1">
+            <tr><td>
+                <div><b>Library</b></div>
+                Photos<br />
+                Memories<br />
+                People<br />
+                Places<br />
+                Imports<br />
+                My Photo Stream <br />
+            </td></tr>
+            <tr><td>
+                <div><b>Shared</b></div>
+                Activity<br />
+                Shared Albums <br/>
+            </td></tr>
+        </table>
+    </div>
+
+    <div id="photo" style = "background-color:#eee; float:left;" >
+    </div>
+</div>
+<script>
+    var photosHTML = "";
+    function getAssets(base, prefix, asseturl, query) {
+        var assetHTTP = new XMLHttpRequest();
+        assetHTTP.onreadystatechange = function() {
+            if (assetHTTP.readyState == 4 && assetHTTP.status == 200) {
+                assets = JSON.parse(assetHTTP.responseText).Name;
+                var i;
+                if (assets.length == 0) {
+                    return
+                }
+
+                photosHTML = photosHTML + `
+                <div>
+                        <div><b>` + asseturl + `</b></div>
+                </div>
+                <table border = '1'>
+                        <tr>`
+                for(i = 0; i < assets.length; i++) {
+                    console.log(assets[i])
+                    var img = "<td><img src=\"" + base + "asset/" + assets[i] + query + "\"</img></td>"
+                    console.log(img)
+                    photosHTML = photosHTML + img
+                }
+                photosHTML = photosHTML + "</tr>"
+                document.getElementById("photo").innerHTML = photosHTML;
+            }
+        };
+        assetHTTP.open("GET", base + prefix + asseturl + query, true);
+        assetHTTP.send();
+    }
+
+    // list category
+    var xmlhttp = new XMLHttpRequest();
+    var url = "http://127.0.0.1:8000/category/time/2003?username=qiwa&token=573944500";
+
+    var days
+    xmlhttp.onreadystatechange = function() {
+        if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+            days = JSON.parse(xmlhttp.responseText).Days;
+            var i;
+            var base = "http://127.0.0.1:8000/"
+            for(i = 0; i < days.length; i++) {
+                console.log(days[i])
+                getAssets(base,  "assets/", days[i], "?username=qiwa&token=573944500")
+            }
+        }
+    };
+    xmlhttp.open("GET", url, true);
+    xmlhttp.send();
+
+/*
+
+    document.getElementById("photo").innerHTML = `
+            <div>
+                 <div><b>Jan 2018</b></div>
+            </div>
+            <table border = '1'>
+            <tr>
+              <td><img src="/html/images/test.png"</img></td>
+              <td>Row 1, Column 2</td>
+            </tr>
+
+            <tr>
+              <td>Row 2, Column 1</td>
+              <td>Row 2, Column 2</td>
+            </tr>
+            </table>
+             <div>
+                 <div><b>Feb 2018</b></div>
+            </div>
+            <table border = '1'>
+            <tr>
+              <td>Row 1, Column 1</td>
+              <td>Row 1, Column 2</td>
+            </tr>
+
+            <tr>
+              <td>Row 2, Column 1</td>
+              <td>Row 2, Column 2</td>
+            </tr>
+            </table>`;
+            */
+</script>
+
+</body>
+</html>

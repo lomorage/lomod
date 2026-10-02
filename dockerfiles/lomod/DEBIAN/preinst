@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ -f "/lib/systemd/system/lomod.service" ]
+then
+  systemctl stop lomod
+fi 
+
+# backup database
+if [ -f "/opt/lomorage/var/assets.db" ]
+then
+  cp /opt/lomorage/var/assets.db /opt/lomorage/var/assets.db.$(date +%m-%d-%y.%H.%M.%S)
+fi

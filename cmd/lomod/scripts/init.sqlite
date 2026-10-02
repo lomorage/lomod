@@ -1,0 +1,15 @@
+insert into user (user_name, password, phone, email, nick_name, home_dir, admin, status, create_time, last_modified_time, last_login_time) values ("alice", "alice123", "", "", "", "/tmp/alice", 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+insert into device (user_id, device_name) values (1, "iphonex-a");
+insert into token(token, user_id, device_id, create_time, expire_time) values ("573944500", 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+insert into user (user_name, password, phone, email, nick_name, home_dir, admin, status, create_time, last_modified_time, last_login_time) values ("bob", "bob123", "", "", "", "/tmp/bob", 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+insert into device (user_id, device_name) values (2, "iphonex-b");
+insert into token(token, user_id, device_id, create_time, expire_time) values ("573944500", 2, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+insert into user (user_name, password, phone, email, nick_name, home_dir, admin, status, create_time, last_modified_time, last_login_time) values ("charlie", "charlie123", "", "", "", "/tmp/charlie", 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+insert into device (user_id, device_name) values (3, "iphonex-c");
+insert into token(token, user_id, device_id, create_time, expire_time) values ("573944500", 3, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+insert into user (user_name, password, phone, email, nick_name, home_dir, admin, status, create_time, last_modified_time, last_login_time) values ("denny", "denny123", "", "", "", "/tmp/denny", 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+insert into device (user_id, device_name) values (4, "iphonex-d");
+insert into token(token, user_id, device_id, create_time, expire_time) values ("573944500", 4, 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);

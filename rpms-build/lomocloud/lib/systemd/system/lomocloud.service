@@ -1,0 +1,14 @@
+[Unit]
+Description=Lomo storage cloud backend
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=lomoware
+Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib"
+ExecStart=/opt/lomorage/bin/lomocloud -b /opt/lomorage
+
+[Install]
+WantedBy=multi-user.target

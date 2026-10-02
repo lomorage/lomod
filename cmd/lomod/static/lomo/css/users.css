@@ -1,0 +1,326 @@
+/* Users page (create additional accounts + share sign-in QR codes). */
+
+.users-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 var(--space-4) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.users-card {
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+}
+
+.users-card h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 16px;
+  margin: 0 0 var(--space-4);
+  color: var(--ink-900);
+}
+
+.users-card h2 svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--ink-400);
+}
+
+/* The account list is state to scan, not a form to fill in -- dropping the
+   shadow the two form cards below keep is what tells them apart, rather
+   than three identical elevated boxes in a row. */
+.users-accounts-panel {
+  box-shadow: none;
+}
+
+.users-form-group {
+  margin-bottom: var(--space-4);
+}
+
+.users-form-group label {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-700);
+  margin-bottom: var(--space-2);
+}
+
+.users-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--ink-900);
+  background: var(--surface-0);
+}
+
+.users-input:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 1px;
+}
+
+.users-hint {
+  display: block;
+  color: var(--ink-400);
+  font-size: 12px;
+  margin-top: var(--space-2);
+}
+
+p.users-hint {
+  margin: 0 0 var(--space-4);
+}
+
+.users-status {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.users-status.is-error {
+  background: rgba(229, 72, 77, 0.1);
+  color: var(--danger);
+}
+
+.users-qr-result {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+/* Border-box/padding-box double background is how you get a gradient
+   border with a solid interior -- a plain `border` can't take a gradient. */
+.users-qr-canvas {
+  display: inline-block;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 3px solid transparent;
+  background-image: linear-gradient(#fff, #fff), var(--memory-glow);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+.users-qr-result .users-hint {
+  margin-top: var(--space-3);
+}
+
+.users-status.is-success {
+  background: rgba(31, 157, 103, 0.1);
+  color: var(--success);
+}
+
+/* Accounts list */
+
+.users-account-row {
+  border-top: 1px solid var(--line);
+  padding: var(--space-4) 0;
+}
+
+.users-account-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.users-account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.users-account-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.users-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.users-avatar.is-current {
+  box-shadow: 0 0 0 2px var(--surface-0), 0 0 0 4px var(--forest);
+}
+
+.users-account-info {
+  min-width: 0;
+}
+
+.users-account-name {
+  font-weight: 600;
+  color: var(--ink-900);
+  font-size: 15px;
+}
+
+.users-account-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--ink-600);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.users-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--ink-400);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.users-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.users-meta-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.users-meta-item svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.users-account-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.users-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface-0);
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-700);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease,
+    border-color 0.12s ease, color 0.12s ease;
+}
+
+.users-chip svg,
+.users-chip span {
+  pointer-events: none;
+}
+
+.users-chip svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.users-chip:hover,
+.users-chip:focus-visible {
+  transform: translateY(-1px);
+  background: var(--surface-2);
+  border-color: var(--forest);
+  color: var(--forest);
+}
+
+.users-chip:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.users-chip.is-danger {
+  color: var(--danger);
+  border-color: rgba(229, 72, 77, 0.3);
+}
+
+.users-chip.is-danger:hover,
+.users-chip.is-danger:focus-visible {
+  background: rgba(229, 72, 77, 0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.users-btn-link {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-400);
+  cursor: pointer;
+}
+
+.users-btn-link:hover,
+.users-btn-link:focus {
+  color: var(--ink-700);
+  text-decoration: underline;
+}
+
+.users-inline-form,
+.users-inline-confirm {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+}
+
+.users-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.users-inline-form .users-input {
+  flex: 1 1 160px;
+  width: auto;
+}
+
+.users-inline-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--ink-700);
+  font-size: 13px;
+}
+
+.users-btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}

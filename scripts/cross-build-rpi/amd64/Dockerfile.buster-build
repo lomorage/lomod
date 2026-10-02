@@ -1,0 +1,37 @@
+# Debian buster (10) amd64 build environment for lomod/lomoc, self-contained
+# (bakes in libvips 8.10.6 built from source + a modern Go toolchain) since
+# no pre-built lomorage buster/amd64 image exists, unlike the ARM targets.
+# buster's own mirrors are EOL, so apt is pointed at archive.debian.org.
+FROM debian:buster
+
+RUN set -ex; \
+    printf 'deb http://archive.debian.org/debian buster main\ndeb http://archive.debian.org/debian-security buster/updates main\ndeb http://archive.debian.org/debian buster-updates main\n' > /etc/apt/sources.list; \
+    printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid; \
+    apt-get update
+
+RUN apt-get install -y --no-install-recommends \
+    build-essential pkg-config curl ca-certificates git \
+    libglib2.0-dev libexpat1-dev libfftw3-dev libmagickcore-dev \
+    liborc-0.4-dev liblcms2-dev libheif-dev zlib1g-dev libwebp-dev \
+    libtiff-dev libpng-dev libimagequant-dev libjpeg62-turbo-dev \
+    libexif-dev libgsf-1-dev libxml2-dev libde265-dev libopenjp2-7-dev \
+    libsqlite3-dev
+
+ARG VIPS_VERSION=8.10.6
+RUN set -ex; \
+    curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \
+    mkdir /tmp/vips-src; \
+    tar -C /tmp/vips-src --strip-components=1 -xzf /tmp/vips.tar.gz; \
+    cd /tmp/vips-src; \
+    ./configure --prefix=/usr/local --disable-gtk-doc-html --disable-gtk-doc; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    rm -rf /tmp/vips-src /tmp/vips.tar.gz
+
+ARG GO_VERSION=1.26.5
+RUN set -ex; \
+    curl -fsSL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"; \
+    tar -C /usr/local -xzf /tmp/go.tar.gz; \
+    rm /tmp/go.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"

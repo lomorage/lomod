@@ -1,0 +1,12 @@
+scripts/cross-build-rpi/*.sh text eol=lf
+scripts/cross-build-rpi/*.md text eol=lf
+scripts/cross-build-rpi/amd64/*.sh text eol=lf
+scripts/cross-build-rpi/amd64/Dockerfile.buster-build text eol=lf
+scripts/cross-build-rpi/amd64/Dockerfile.ubuntu-vips-build text eol=lf
+scripts/cross-build-rpi/amd64/Dockerfile.debian-vips-build text eol=lf
+scripts/cross-build-rpi/rpm/*.sh text eol=lf
+scripts/cross-build-rpi/rpm/*.md text eol=lf
+scripts/cross-build-rpi/rpm/*.spec.in text eol=lf
+scripts/cross-build-rpi/rpm/Dockerfile.* text eol=lf
+rpms-build/lomod/** text eol=lf
+rpms-build/lomod/**/*.db binary

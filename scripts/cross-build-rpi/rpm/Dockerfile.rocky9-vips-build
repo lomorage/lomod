@@ -1,0 +1,29 @@
+# Builds libvips from source natively for Rocky Linux 9 (RHEL-compatible),
+# since vips isn't in base repos or EPEL. Same reasoning as the Ubuntu
+# jammy/noble builds: a Fedora/Debian-built lomo-vips won't run here, the
+# library SONAMEs don't match.
+FROM rockylinux:9
+
+RUN dnf -y install epel-release && \
+    dnf -y install 'dnf-command(config-manager)' && \
+    dnf config-manager --set-enabled crb && \
+    dnf -y makecache
+
+RUN dnf -y install \
+    gcc gcc-c++ make pkgconf-pkg-config ca-certificates \
+    glib2-devel expat-devel fftw-devel ImageMagick-devel orc-devel \
+    lcms2-devel libheif-devel zlib-devel libwebp-devel libtiff-devel \
+    libpng-devel libimagequant-devel libjpeg-turbo-devel libexif-devel \
+    libgsf-devel libxml2-devel openjpeg2-devel sqlite-devel
+
+ARG VIPS_VERSION=8.12.2
+RUN set -ex; \
+    curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \
+    mkdir /tmp/vips-src; \
+    tar -C /tmp/vips-src --strip-components=1 -xzf /tmp/vips.tar.gz; \
+    cd /tmp/vips-src; \
+    ./configure --prefix=/usr/local --disable-gtk-doc-html --disable-gtk-doc; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    rm -rf /tmp/vips-src /tmp/vips.tar.gz

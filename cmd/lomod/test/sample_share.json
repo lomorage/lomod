@@ -1,0 +1,13 @@
+{
+    "Records": [
+     {
+         "AssetID": "3.jpg",
+         "ReceiverID": 2,
+         "Type": 0
+     },
+     {
+         "AssetID": "2.jpg",
+         "ReceiverID": 2,
+         "Type": 1
+     }]
+}

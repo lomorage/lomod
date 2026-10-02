@@ -1,0 +1,17 @@
+FROM "lomorage/dev-image:1.3"
+
+RUN apt-get install kmod -y
+RUN /usr/sbin/useradd -m -d /go/src/bitbucket.org/lomoware/lomo-backend pi
+RUN echo "pi ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/010_pi-nopasswd
+RUN mkdir -p /media
+RUN chown pi:pi /media
+
+RUN mkdir -p /opt/lomorage
+RUN chown pi:pi /opt/lomorage
+RUN /sbin/modprobe -r g_mass_storage || exit 0
+RUN /sbin/modprobe dummy-hcd || exit 0
+
+ENV GOPATH=/go
+ENV GOROOT=/usr/local/go
+ENV PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+WORKDIR /go/src/bitbucket.org/lomoware/lomo-backend

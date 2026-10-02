@@ -1,0 +1,40 @@
+# Builds libvips from source natively against a given Debian release's own
+# library stack. Needed because the amd64 lomo-vips previously published for
+# bookworm/trixie turned out to be linked against buster-era SONAMEs
+# (libwebp.so.6/libtiff.so.5/libjpeg.so.8) that don't exist on bookworm+
+# (confirmed: lomod fails to even load), and buster/bullseye never had an
+# amd64 lomo-vips published at all -- same underlying issue that jammy/noble
+# hit on the Ubuntu side, just undiscovered here until now.
+# Build with --build-arg BASE_IMAGE=debian:bullseye (etc).
+ARG BASE_IMAGE=debian:bookworm
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# buster's own mirrors are EOL; point at archive.debian.org instead.
+ARG USE_ARCHIVE_MIRROR=false
+RUN if [ "$USE_ARCHIVE_MIRROR" = "true" ]; then \
+      CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME"); \
+      printf 'deb http://archive.debian.org/debian %s main\ndeb http://archive.debian.org/debian-security %s/updates main\ndeb http://archive.debian.org/debian %s-updates main\n' "$CODENAME" "$CODENAME" "$CODENAME" > /etc/apt/sources.list; \
+      printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid; \
+    fi
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config curl ca-certificates \
+    libglib2.0-dev libexpat1-dev libfftw3-dev libmagickcore-dev \
+    liborc-0.4-dev liblcms2-dev libheif-dev zlib1g-dev libwebp-dev \
+    libtiff-dev libpng-dev libimagequant-dev libjpeg62-turbo-dev \
+    libexif-dev libgsf-1-dev libxml2-dev libde265-dev libopenjp2-7-dev \
+    libsqlite3-dev
+
+ARG VIPS_VERSION=8.12.2
+RUN set -ex; \
+    curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \
+    mkdir /tmp/vips-src; \
+    tar -C /tmp/vips-src --strip-components=1 -xzf /tmp/vips.tar.gz; \
+    cd /tmp/vips-src; \
+    ./configure --prefix=/usr/local --disable-gtk-doc-html --disable-gtk-doc; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    rm -rf /tmp/vips-src /tmp/vips.tar.gz

@@ -1,0 +1,9 @@
+FROM lomorage/vips-amd64-ubuntu-focal-build
+
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN apt-get -yqq update && apt-get install -yq --no-install-recommends man-db vim && apt-get clean autoclean && apt-get autoremove -y && rm -rf /var/lib/{apt,dpkg,cache,log}/
+
+ENV GOPATH=/go
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.39.0
+RUN go get github.com/GeertJohan/go.rice/rice

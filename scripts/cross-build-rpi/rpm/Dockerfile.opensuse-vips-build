@@ -1,0 +1,27 @@
+# Builds libvips from source natively for openSUSE Leap, since vips isn't
+# in the base repos. Same reasoning as Ubuntu/Rocky: a Fedora/Debian-built
+# lomo-vips won't run here, the library SONAMEs don't match. orc isn't
+# packaged for openSUSE Leap at all; it's an optional performance dep in
+# vips's configure script, not a hard requirement, so it's just omitted.
+FROM opensuse/leap:latest
+
+RUN zypper --non-interactive refresh && \
+    zypper --non-interactive install -y \
+    gcc gcc-c++ make pkgconf-pkg-config curl ca-certificates \
+    glib2-devel libexpat-devel fftw3-devel ImageMagick-devel \
+    liblcms2-devel libheif-devel zlib-devel libwebp-devel \
+    libtiff-devel libpng16-devel libimagequant-devel libjpeg8-devel \
+    libexif-devel libgsf-devel libxml2-devel openjpeg2-devel \
+    sqlite3-devel
+
+ARG VIPS_VERSION=8.12.2
+RUN set -ex; \
+    curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \
+    mkdir /tmp/vips-src; \
+    tar -C /tmp/vips-src --strip-components=1 -xzf /tmp/vips.tar.gz; \
+    cd /tmp/vips-src; \
+    ./configure --prefix=/usr/local --disable-gtk-doc-html --disable-gtk-doc; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    rm -rf /tmp/vips-src /tmp/vips.tar.gz

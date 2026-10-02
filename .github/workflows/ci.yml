@@ -1,0 +1,115 @@
+# Basic checks on every push: everything compiles, the unit tests pass, and a freshly built
+# lomod starts and serves the first-run setup page. scripts/release-all.sh refuses to release
+# a commit this workflow hasn't passed.
+#
+# Not run here: the handler package's gocheck suite (TestMainSuite -- needs mDNS, fixed /tmp
+# paths and sample media) and api/test/lomod (needs an installed lomod); see `make test-handler`
+# and `make test-api`.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GOFLAGS: -mod=vendor
+  CGO_ENABLED: "1"
+  CGO_CFLAGS_ALLOW: -Xpreprocessor
+  TAGS: sqlite_trace trace
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: false # dependencies are vendored
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libvips-dev libimage-exiftool-perl ffmpeg zbar-tools samba
+
+      - name: Embed web assets with go.rice, as release builds do
+        run: |
+          GOFLAGS= go install github.com/GeertJohan/go.rice/rice@v1.0.2
+          make build-rice
+
+      - name: Build everything
+        run: go build -tags "$TAGS" ./...
+
+      - name: Unit tests
+        # Same package set as `make test-simple`.
+        run: |
+          go list ./... | grep -vE 'api|cmd|handler|vendor' \
+            | xargs go test -tags "$TAGS" -timeout 20m
+
+      - name: Handler unit tests (without the gocheck suite)
+        run: go test -tags "$TAGS" -timeout 10m -skip '^TestMainSuite$' ./handler/
+
+      - name: lomoupg self-update tests
+        # cmd/ is excluded from the unit test step above. The Windows-only cases (a locked
+        # install dir) skip here; scripts/windows/test-self-update.ps1 covers those end to end.
+        run: CGO_ENABLED=0 go test -timeout 5m ./cmd/lomoupg/
+
+      - name: Build lomod
+        # -s -w like the release build (scripts/cross-build-rpi/build.sh). Also required: an
+        # unstripped Linux binary panics in go.rice's init, because the vendored go.zipexe v1.0.0
+        # calls ReadAt on DWARF sections Go now compresses, which debug/elf can't read directly.
+        run: go build -tags "$TAGS" -ldflags "-s -w" -o bin/lomod ./cmd/lomod
+
+      - name: Smoke test the first-run setup page
+        run: bash scripts/ci/smoke-setup-qr.sh bin/lomod
+
+      - name: Keep the lomod binary for the test image
+        uses: actions/upload-artifact@v7
+        with:
+          name: lomod-linux-amd64
+          path: bin/lomod
+          retention-days: 7
+
+  # Publishes ghcr.io/lomorage/lomod-test: this commit's lomod plus its runtime
+  # dependencies, for other repos' integration tests (lomo-mobile's `integration`
+  # job runs inside it). Tags: branch name, sha-<commit>, and `latest` on main.
+  publish-test-image:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: lomod-linux-amd64
+          path: dockerfiles/lomod-test
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/lomorage/lomod-test
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: dockerfiles/lomod-test
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

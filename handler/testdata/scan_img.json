@@ -1,0 +1,54 @@
+{
+ "Name": "图片",
+ "Flag": 3,
+ "Children": [
+  {
+   "Name": "1.webp",
+   "Flag": 0,
+   "CreateTime": "2021-01-01T06:21:08Z"
+  },
+  {
+   "Name": "img_4479.heic",
+   "Flag": 4,
+   "CreateTime": "2017-09-13T06:27:17Z"
+  },
+  {
+   "Name": "sample1.dng",
+   "Flag": 4,
+   "CreateTime": "2008-12-14T15:54:54Z"
+  },
+  {
+   "Name": "true_2003_01_17.jpg",
+   "Flag": 4,
+   "CreateTime": "2003-01-17T12:00:00Z"
+  },
+  {
+   "Name": "true_2003_11_01_1.jpg",
+   "Flag": 4,
+   "CreateTime": "2003-11-01T08:00:00Z"
+  },
+  {
+   "Name": "true_2003_11_01_2.jpg",
+   "Flag": 4,
+   "CreateTime": "2003-11-01T08:00:00Z"
+  },
+  {
+   "Name": "true_2003_11_23.jpg",
+   "Flag": 4,
+   "CreateTime": "2003-11-23T18:07:37Z"
+  },
+  {
+   "Name": "true_2004_1_21.jpg",
+   "Flag": 4,
+   "CreateTime": "2004-01-21T01:55:50Z"
+  },
+  {
+   "Name": "true_2018_07_28.png",
+   "Flag": 0,
+   "CreateTime": "2020-01-15T03:49:36Z"
+  }
+ ],
+ "CreateTime": "2021-01-03T06:50:36Z",
+ "EarliestTime": "2003-01-17T12:00:00Z",
+ "LatestTime": "2021-01-03T06:50:36Z"
+}

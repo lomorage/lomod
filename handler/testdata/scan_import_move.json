@@ -1,0 +1,204 @@
+{
+ "Name": "/tmp/usbdisk1",
+ "Flag": 1,
+ "Children": [
+  {
+   "Name": "scan_test",
+   "Flag": 1,
+   "Children": [
+    {
+     "Name": "video",
+     "Flag": 3,
+     "Children": [
+      {
+       "Name": "lomo_orig_sha.mov",
+       "Flag": 128,
+       "SHA1": "69a65215eea4def69e1cfd3fbf4295ebd2dfa714",
+       "CreateTime": "2020-05-21T05:42:37Z"
+      },
+      {
+       "Name": "rotate_0.mov",
+       "Flag": 128,
+       "SHA1": "6d7d57813d3bbf94c92c5aa17ced276b99bf85ca",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_0.png",
+       "Flag": 128,
+       "SHA1": "b94e80067157cd43094ac869b968167d83e0bc19",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_0_scale.mov",
+       "Flag": 128,
+       "SHA1": "e3b9ec7749fe4cfdaae2df2f480ab7688baae7cb",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_180.mov",
+       "Flag": 128,
+       "SHA1": "37300a14028b7b9571c8ed094e525fa1f925e0ab",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_180.png",
+       "Flag": 128,
+       "SHA1": "41c096e03898b10f04e96263160f8977f2f8760a",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_180_scale.mov",
+       "Flag": 128,
+       "SHA1": "29d089cc91d1a8e8008205ddbee193ce16dfde10",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_270.mov",
+       "Flag": 128,
+       "SHA1": "02fafad174eedb48f7ec0f4dc8f233966b36ddd8",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_270.png",
+       "Flag": 128,
+       "SHA1": "cfd9a17bd53a8d167b1f24d5c2437c66e0f22a5a",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_270_scale.mov",
+       "Flag": 128,
+       "SHA1": "2f32b6f11e87c2c78773278995a8bbc666a2bef3",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_90.mov",
+       "Flag": 128,
+       "SHA1": "b3a1a4840d85fef1b108c0689518c35ff1f3a951",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_90.png",
+       "Flag": 128,
+       "SHA1": "514c70cf86c24f6d6509e921d00fca863d1a4caf",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_90_scale.mov",
+       "Flag": 128,
+       "SHA1": "9b8f7b039ad9628b1aa6addbd859cd08908fb6a7",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_notag.mov",
+       "Flag": 128,
+       "SHA1": "3d2bfe57ef239612a16c5e2737a27bd6907131d5",
+       "CreateTime": "2020-03-29T06:26:10Z"
+      },
+      {
+       "Name": "rotate_notag_scale.mov",
+       "Flag": 128,
+       "SHA1": "9e15c49a891f746ba3f1399dc8f5a6fcd92f80db",
+       "CreateTime": "2020-05-21T07:04:43Z"
+      },
+      {
+       "Name": "sample.3gp",
+       "Flag": 128,
+       "SHA1": "491154fee1b01c2e41fb93dc41843f5e77c1732b",
+       "CreateTime": "2020-04-18T21:50:35Z"
+      },
+      {
+       "Name": "slow_motion.mov",
+       "Flag": 132,
+       "SHA1": "a6902dc1b38136afe949a78d7d458d760125c864",
+       "CreateTime": "2019-11-05T04:46:58Z"
+      },
+      {
+       "Name": "true_2013_08_08.mp4",
+       "Flag": 132,
+       "SHA1": "5d14e3ce82d2101b3b8ece22487d81d824a5745a",
+       "CreateTime": "2013-08-08T08:08:08Z"
+      },
+      {
+       "Name": "true_2013_08_08_rotate.mp4",
+       "Flag": 132,
+       "SHA1": "014cb0467a127fbda28c372fdee091a2c6cc8876",
+       "CreateTime": "2013-08-08T08:08:08Z"
+      }
+     ],
+     "CreateTime": "2021-01-03T01:37:29Z",
+     "EarliestTime": "2013-08-08T08:08:08Z",
+     "LatestTime": "2021-01-03T01:37:29Z"
+    },
+    {
+     "Name": "图片",
+     "Flag": 3,
+     "Children": [
+      {
+       "Name": "1.webp",
+       "Flag": 128,
+       "SHA1": "0c03dcd19f804a559bd0ae32db2998dad4a4936a",
+       "CreateTime": "2021-01-01T06:21:08Z"
+      },
+      {
+       "Name": "img_4479.heic",
+       "Flag": 132,
+       "SHA1": "2a8210982e4cfbeb56d283f43fea9c118a53a839",
+       "CreateTime": "2017-09-13T06:27:17Z"
+      },
+      {
+       "Name": "sample1.dng",
+       "Flag": 132,
+       "SHA1": "893326e969385849d88176538650f181cd350e52",
+       "CreateTime": "2008-12-14T15:54:54Z"
+      },
+      {
+       "Name": "true_2003_01_17.jpg",
+       "Flag": 132,
+       "SHA1": "17363532de7bc73e42823c1448bd52ffe45d4bfc",
+       "CreateTime": "2003-01-17T12:00:00Z"
+      },
+      {
+       "Name": "true_2003_11_01_1.jpg",
+       "Flag": 132,
+       "SHA1": "7426655f042e8605385cb413de639373b934b18d",
+       "CreateTime": "2003-11-01T08:00:00Z"
+      },
+      {
+       "Name": "true_2003_11_01_2.jpg",
+       "Flag": 132,
+       "SHA1": "575db2e474109f982ead09e7f8676680a679c9c0",
+       "CreateTime": "2003-11-01T08:00:00Z"
+      },
+      {
+       "Name": "true_2003_11_23.jpg",
+       "Flag": 132,
+       "SHA1": "4ebf54db04f335ff66bfc1fd982be62bf23fc967",
+       "CreateTime": "2003-11-23T18:07:37Z"
+      },
+      {
+       "Name": "true_2004_1_21.jpg",
+       "Flag": 132,
+       "SHA1": "d4d8773112f68162949b9578f6e476c7f6c8af1f",
+       "CreateTime": "2004-01-21T01:55:50Z"
+      },
+      {
+       "Name": "true_2018_07_28.png",
+       "Flag": 128,
+       "SHA1": "921196cc106f070668dbb2ff3eafc01017540a52",
+       "CreateTime": "2020-01-15T03:49:36Z"
+      }
+     ],
+     "CreateTime": "2021-01-03T06:50:36Z",
+     "EarliestTime": "2003-01-17T12:00:00Z",
+     "LatestTime": "2021-01-03T06:50:36Z"
+    }
+   ],
+   "CreateTime": "2021-01-03T06:21:08Z",
+   "EarliestTime": "2003-01-17T12:00:00Z",
+   "LatestTime": "2021-01-03T06:50:36Z"
+  }
+ ],
+ "CreateTime": "2021-01-03T06:21:08Z",
+ "EarliestTime": "2003-01-17T12:00:00Z",
+ "LatestTime": "2021-01-03T06:50:36Z"
+}

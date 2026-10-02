@@ -1,0 +1,76 @@
+package lomod
+
+var sql0 = `
+CREATE TABLE IF NOT EXISTS user (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_name TEXT NOT NULL,
+ password TEXT NOT NULL,
+ phone TEXT NOT NULL,
+ email TEXT NOT NULL,
+ nick_name TEXT NOT NULL,
+ home_dir TEXT NOT NULL,
+ admin INTEGER NOT NULL,
+ status INTEGER NOT NULL,
+ create_time INTEGER NOT NULL,
+ last_modified_time INTEGER NOT NULL,
+ last_login_time INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ group_name TEXT NOT NULL,
+ owner_id INTEGER NOT NULL,
+ create_time INTEGER NOT NULL,
+ last_modified_time INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS member (
+ group_id INTEGER NOT NULL,
+ user_id INTEGER NOT NULL,
+ create_time INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS asset (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER NOT NULL,
+ year INTEGER NOT NULL,
+ month INTEGER NOT NULL,
+ day INTEGER NOT NULL,
+ ext_id INTEGER NOT NULL,
+ hash TEXT NOT NULL,
+ device_id INTEGER NOT NULL,
+ create_time INTEGER NOT NULL,
+ upload_time INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS share(
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ share_type INTEGER NOT NULL,
+ sender_id INTEGER NOT NULL,
+ receiver_id INTEGER NOT NULL,
+ asset_id INTEGER NOT NULL,
+ read_flag INTEGER NOT NULL,
+ create_time INTEGER NOT NULL,
+ expire_time INTEGER NOT NULL,
+ last_modified_time INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS token(
+ token TEXT NOT NULL,
+ user_id INTEGER NOT NULL,
+ device_id INTEGER NOT NULL,
+ create_time INTEGER NOT NULL,
+ expire_time INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS device(
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER NOT NULL,
+ device_name TEXT NOT NULL
+);
+
+CREATE table if not exists schema_migrations (
+ latest INTEGER PRIMARY KEY NOT NULL ,
+ update_time INTEGER NOT NULL
+);
+`

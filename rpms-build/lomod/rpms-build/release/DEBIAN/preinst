@@ -1,0 +1,40 @@
+#!/bin/bash
+
+DB=/opt/lomorage/var/assets.db
+SCHEMA_VERSION_FILE="$(dirname "$0")/schema-version"
+
+# Only back up assets.db if this release will actually migrate it: compare
+# the live schema version against the version this package ships. Avoids an
+# unconditional full-file copy (can be hundreds of MB) on every routine
+# upgrade, most of which don't touch the DB schema at all. Falls back to
+# always backing up if the check can't be done (no sqlite3, no version file,
+# fresh install, etc).
+NEED_DB_BACKUP=1
+if [ -f "$DB" ] && [ -f "$SCHEMA_VERSION_FILE" ] && command -v sqlite3 >/dev/null 2>&1
+then
+  NEW_VERSION=$(cat "$SCHEMA_VERSION_FILE")
+  # .timeout rides out transient SQLITE_BUSY from lomod's own writes instead
+  # of failing the read outright (assets.db is a live, actively-written DB).
+  CURR_VERSION=$(sqlite3 "$DB" ".timeout 3000" "select latest from schema_migrations order by latest desc limit 1;" 2>/dev/null)
+  if [ -n "$NEW_VERSION" ] && [ -n "$CURR_VERSION" ] && [ "$CURR_VERSION" -ge "$NEW_VERSION" ] 2>/dev/null
+  then
+    NEED_DB_BACKUP=0
+  fi
+fi
+
+if [ -f "/lib/systemd/system/lomod.service" ]
+then
+  systemctl stop lomod
+fi
+
+# backup database (only when this upgrade will actually migrate it)
+if [ "$NEED_DB_BACKUP" = "1" ] && [ -f "$DB" ]
+then
+  cp "$DB" "$DB.$(date +%m-%d-%y.%H.%M.%S)"
+fi
+
+# backup environment file
+if [ -f "/opt/lomorage/etc/environment" ]
+then
+  cp /opt/lomorage/etc/environment /opt/lomorage/etc/environment.bak
+fi

@@ -1,0 +1,374 @@
+#!/usr/bin/env bash
+#
+# One-click installer for lomod (lomorage's personal photo backup backend) on macOS.
+#
+# Intended to be run the same way Claude Code's own installer is:
+#
+#     curl -fsSL https://lomorage.com/mac/install.sh | bash
+#
+# This installs the current lomod backend with a browser setup flow.
+# Installation instructions are at https://lomorage.com/#download.
+# It comes with Lomorage.app, a menu bar icon (see its Contents/MacOS/lomorage-tray.swift
+# header comment) mirroring the Windows
+# installer's system tray icon, for open/start/stop/restart/reset without a terminal --
+# installed to ~/Applications so a non-technical user who quits the tray can find and reopen it
+# via Spotlight/Launchpad like any normal Mac app, rather than needing Terminal or a reboot.
+#
+# Everything here runs at the current user's permission level -- no sudo, no admin rights, no
+# system LaunchDaemon. It installs into ~/Library/Application Support, autostarts via a
+# per-user LaunchAgent (RunAtLoad, KeepAlive only on a crash/nonzero exit -- so a deliberate
+# Quit from the tray, which exits cleanly, stays stopped until next login/manual restart same
+# as the Windows Startup-folder shortcut, but an unexpected crash self-heals), and defaults to
+# a single local backup folder with mDNS disabled so first run doesn't trigger a macOS firewall
+# prompt.
+#
+# Safe to re-run: it stops any already-running lomod, replaces the install directory, and
+# restarts it, so this script also serves as a manual repair/reinstall/update path. A daily
+# per-user LaunchAgent (see register_autoupdate / lomorage-update.sh) additionally checks for
+# and installs new releases on its own.
+#
+# Flags (all optional; env vars of the same name in SCREAMING_SNAKE_CASE also work):
+#   --install-dir <dir>    Where lomod and its bundled dependencies (vips/ffmpeg dylibs,
+#                           exiftool) are installed. Default: ~/Library/Application Support/Lomorage/lomod
+#   --data-dir <dir>       Where photos/videos and the sqlite catalog are stored (the "single
+#                           local folder" desktop mode -- no Samba/USB-mount/mDNS features).
+#                           Default: ~/Pictures/Lomorage
+#   --release-url <url>    Where to fetch the release manifest (see installers/release.json.example
+#                           for the schema). Default: https://lomorage.com/release.json -- the
+#                           same production manifest LomoAgent's own updater uses, but this
+#                           script reads its own 'macos-cli-<arch>' key, never the 'darwin' key
+#                           LomoAgent itself uses, so the two installers' release info can
+#                           never collide.
+#   --manifest-key <key>   Which top-level key of the release manifest to read. Default:
+#                           macos-cli-arm64 or macos-cli-amd64, chosen from `uname -m`.
+#   --port <port>          Default: 8000
+#   --no-browser           Skip auto-opening the default browser to the local setup UI after install.
+#
+# LOMOD_CHINA=1  Route the release tarball download through https://gfw.lomorage.com/<url>
+#                (lomorage's GitHub download accelerator proxy) instead of directly from GitHub
+#                Releases, since GitHub Releases asset downloads are often slow or unreachable
+#                from mainland China otherwise. Mirrors installers/windows/
+#                install.ps1's $env:LOMOD_CHINA. Only the tarball download is affected -- the
+#                release manifest fetch (--release-url) already goes to lomorage.com's own
+#                domain, not GitHub. No --china flag (env var only): this script is normally
+#                invoked as `curl | bash`, which has no clean way to pass flags through the pipe,
+#                but a var set on the right-hand command of a pipeline is visible to it:
+#                    curl -fsSL https://lomorage.com/mac/install.sh | LOMOD_CHINA=1 bash
+set -euo pipefail
+
+INSTALL_DIR="${INSTALL_DIR:-${HOME}/Library/Application Support/Lomorage/lomod}"
+DATA_DIR="${DATA_DIR:-${HOME}/Pictures/Lomorage}"
+RELEASE_URL="${RELEASE_URL:-https://lomorage.com/release.json}"
+MANIFEST_KEY="${MANIFEST_KEY:-}"
+PORT="${PORT:-8000}"
+NO_BROWSER="${NO_BROWSER:-}"
+CHINA="${LOMOD_CHINA:-}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+        --data-dir) DATA_DIR="$2"; shift 2 ;;
+        --release-url) RELEASE_URL="$2"; shift 2 ;;
+        --manifest-key) MANIFEST_KEY="$2"; shift 2 ;;
+        --port) PORT="$2"; shift 2 ;;
+        --no-browser) NO_BROWSER=1; shift ;;
+        *) echo "unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+LABEL="com.lomorage.lomod"
+PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+UPDATE_LABEL="com.lomorage.lomod-update"
+UPDATE_PLIST_PATH="${HOME}/Library/LaunchAgents/${UPDATE_LABEL}.plist"
+UPDATE_LOG="${HOME}/Library/Logs/Lomorage/update.log"
+APP_PATH="${HOME}/Applications/Lomorage.app"
+
+step() { printf '\033[36m==>\033[0m %s\n' "$1"; }
+warn() { printf '\033[33m!!\033[0m %s\n' "$1" >&2; }
+fail() { printf '\033[31mInstall failed:\033[0m %s\n' "$1" >&2; exit 1; }
+
+case "$(uname -s)" in
+    Darwin) ;;
+    *) fail "this installer is for macOS only" ;;
+esac
+
+ARCH_RAW="$(uname -m)"
+case "${ARCH_RAW}" in
+    arm64) ARCH="arm64" ;;
+    x86_64) ARCH="amd64" ;;
+    *) warn "unrecognized architecture '${ARCH_RAW}', assuming amd64"; ARCH="amd64" ;;
+esac
+if [[ -z "${MANIFEST_KEY}" ]]; then
+    MANIFEST_KEY="macos-cli-${ARCH}"
+fi
+
+sha256_hex() {
+    shasum -a 256 "$1" | awk '{print $1}'
+}
+
+manifest_field() {
+    # JavaScript for Automation ships with macOS; no developer tools are needed.
+    # Pass JSON as data, never interpolate downloaded content into script source.
+    /usr/bin/osascript -l JavaScript -e '
+function run(argv) {
+    var data = JSON.parse(argv[0]);
+    var platform = data && Object.prototype.hasOwnProperty.call(data, argv[1]) ? data[argv[1]] : null;
+    var value = platform && Object.prototype.hasOwnProperty.call(platform, argv[2]) ? platform[argv[2]] : null;
+    if (typeof value !== "string" || value.trim().length === 0) {
+        throw new Error("Missing or invalid release field: " + argv[1] + "." + argv[2]);
+    }
+    return value;
+}
+' "${MANIFEST_JSON}" "${MANIFEST_KEY}" "$1"
+}
+
+stop_existing_lomod() {
+    local stop_script="${INSTALL_DIR}/lomorage-stop.sh"
+    if [[ -x "${stop_script}" ]]; then
+        step "Stopping any running lomod"
+        "${stop_script}" || true
+    fi
+    # Also stop any running tray -- lomorage-stop.sh only kills lomod, but the tray process
+    # itself has no logic to notice its lomod died and restart it. Left alive across a
+    # reinstall, the NEW instance register_autostart is about to launch would see the OLD tray
+    # still matching its singleton-guard pgrep and exit immediately assuming it's redundant,
+    # even though the lomod it was supposed to be minding just got killed out from under it --
+    # leaving nothing running at all. Matches "safe to re-run" for the tray, not just lomod.
+    pkill -f "${APP_PATH}/Contents/MacOS/lomorage-launcher" 2>/dev/null || true
+    sleep 1
+}
+
+# Installs the Lomorage.app wrapper (shipped as a static template inside the release tarball,
+# see its Contents/MacOS/lomorage-tray.swift header comment) into ~/Applications so it's
+# findable via Spotlight/Launchpad/Finder, then points it at this INSTALL_DIR via
+# install-dir.txt -- the app bundle itself never embeds a copy of the actual tray logic, so it
+# doesn't need reinstalling on every lomod update, only when the compiled binary itself
+# changes. Returns non-zero (caller falls back to starting lomod directly, headless) if the
+# release tarball didn't include the template, e.g. an older release.
+install_app_bundle() {
+    local template="${INSTALL_DIR}/Lomorage.app"
+    if [[ ! -d "${template}" ]]; then
+        return 1
+    fi
+    mkdir -p "$(dirname "${APP_PATH}")"
+    rm -rf "${APP_PATH}"
+    cp -R "${template}" "${APP_PATH}"
+    # Deliberately NOT written inside the bundle (e.g. Contents/Resources/): mutating a signed
+    # .app after the fact invalidates its code signature seal. This path must match the one
+    # lomorage-launcher reads.
+    mkdir -p "${HOME}/Library/Application Support/Lomorage"
+    printf '%s' "${INSTALL_DIR}" > "${HOME}/Library/Application Support/Lomorage/tray-install-dir.txt"
+}
+
+register_autostart() {
+    mkdir -p "$(dirname "${PLIST_PATH}")"
+    # Prefer launching the Lomorage.app wrapper (which starts lomod itself on launch -- see
+    # lomorage-tray.swift's header comment) so a single autostart entry brings back the server,
+    # the menu bar icon, AND a normal double-click-to-reopen Mac app; fall back to starting
+    # lomod directly, headless, if the app bundle is missing (e.g. an older release tarball
+    # extracted over a partial/interrupted install).
+    if [[ -x "${APP_PATH}/Contents/MacOS/lomorage-launcher" ]]; then
+        PROGRAM_ARGUMENTS="<string>${APP_PATH}/Contents/MacOS/lomorage-launcher</string>"
+        PROCESS_TYPE="Interactive"
+    else
+        PROGRAM_ARGUMENTS="<string>${INSTALL_DIR}/lomorage-start.sh</string>"
+        PROCESS_TYPE="Background"
+    fi
+    cat > "${PLIST_PATH}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        ${PROGRAM_ARGUMENTS}
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ProcessType</key>
+    <string>${PROCESS_TYPE}</string>
+</dict>
+</plist>
+PLIST
+    launchctl bootout "gui/$(id -u)/${LABEL}" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "${PLIST_PATH}"
+}
+
+# Daily per-user LaunchAgent running lomorage-update.sh -- the counterpart of the Windows
+# installer's LomorageUpdate Scheduled Task. Returns non-zero if the release tarball didn't
+# ship the updater, e.g. an older release.
+register_autoupdate() {
+    local update_script="${INSTALL_DIR}/lomorage-update.sh"
+    if [[ ! -f "${update_script}" || ! -x "${INSTALL_DIR}/lomoupg" ]]; then
+        return 1
+    fi
+    chmod +x "${update_script}"
+    mkdir -p "$(dirname "${UPDATE_PLIST_PATH}")" "$(dirname "${UPDATE_LOG}")"
+    # StartCalendarInterval, not StartInterval: a Mac that's asleep at 3:15am runs the missed
+    # check when it next wakes, instead of counting a fixed interval from whenever it logged in.
+    # RunAtLoad covers a Mac that was shut down rather than asleep -- launchd doesn't make up a
+    # calendar run missed while powered off, so one that's switched off every night would
+    # otherwise never update. (It also fires once right here at install time: a no-op.)
+    # StartInterval on top of both: the login-time check gives up if the network takes more
+    # than a few minutes to come up (lomorage-update.sh's --wait-for-network), and without a
+    # periodic retry such a Mac would then wait for its next login.
+    # AbandonProcessGroup: if the updater has to fall back to starting lomod itself, that lomod
+    # must outlive this job -- by default launchd kills a finished job's leftover processes.
+    cat > "${UPDATE_PLIST_PATH}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${UPDATE_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>${update_script}</string>
+        <string>--release-url</string>
+        <string>${RELEASE_URL}</string>
+        <string>--manifest-key</string>
+        <string>${MANIFEST_KEY}</string>
+        <string>--wait-for-network</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>21600</integer>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>15</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${UPDATE_LOG}</string>
+    <key>StandardErrorPath</key>
+    <string>${UPDATE_LOG}</string>
+    <key>AbandonProcessGroup</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
+PLIST
+    launchctl bootout "gui/$(id -u)/${UPDATE_LABEL}" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "${UPDATE_PLIST_PATH}"
+}
+
+wait_for_lomod() {
+    # Polls /status, not /mount: /mount answers 500 ("Device is not mounted yet") on a fresh,
+    # not-yet-onboarded lomod until the /welcome setup flow is finished, and 401 ("Invalid
+    # Token") once a user exists, so a /mount-based check had to accept any HTTP response at
+    # all -- which also let some other web server already listening on ${PORT} pass as lomod.
+    # /status needs no token in any state and answers 200 with a bare numeric system status;
+    # requiring that body keeps the check specific to lomod. Same check as
+    # installers/windows/install.ps1's Wait-ForLomod.
+    local timeout=30 start_ts now_ts body
+    start_ts="$(date +%s)"
+    while true; do
+        body="$(curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/status" 2>/dev/null)" || body=""
+        if [[ "${body}" =~ ^[0-9]+$ ]]; then
+            return 0
+        fi
+        now_ts="$(date +%s)"
+        if (( now_ts - start_ts >= timeout )); then
+            return 1
+        fi
+        sleep 0.5
+    done
+}
+
+trap 'fail "unexpected error on line $LINENO"' ERR
+
+step "Fetching release manifest from ${RELEASE_URL}"
+MANIFEST_JSON="$(curl -fsSL "${RELEASE_URL}")" || fail "could not fetch ${RELEASE_URL}"
+
+PLATFORM_URL="$(manifest_field URL)" || fail "release manifest at ${RELEASE_URL} has no usable '${MANIFEST_KEY}' entry (expected URL/SHA256/Version fields, see installers/release.json.example)"
+PLATFORM_SHA256="$(manifest_field SHA256)" || fail "release manifest entry '${MANIFEST_KEY}' is missing SHA256"
+PLATFORM_VERSION="$(manifest_field Version)" || fail "release manifest entry '${MANIFEST_KEY}' is missing Version"
+
+stop_existing_lomod
+
+DOWNLOAD_URL="${PLATFORM_URL}"
+CHINA_SUFFIX=""
+if [[ -n "${CHINA}" ]]; then
+    DOWNLOAD_URL="https://gfw.lomorage.com/${PLATFORM_URL}"
+    CHINA_SUFFIX=" via gfw.lomorage.com proxy"
+fi
+
+step "Downloading lomod ${PLATFORM_VERSION}${CHINA_SUFFIX}"
+TMP_DIR="$(mktemp -d -t lomorage-macos)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+TMP_TARBALL="${TMP_DIR}/lomorage-macos-${PLATFORM_VERSION}.tar.gz"
+curl -fsSL -o "${TMP_TARBALL}" "${DOWNLOAD_URL}" || fail "download of ${DOWNLOAD_URL} failed"
+
+# lowercase via tr, not bash 4's ${var,,}: macOS ships bash 3.2 (Apple stopped updating bash
+# at the last GPLv2 release), which doesn't support that expansion.
+ACTUAL_SHA256="$(sha256_hex "${TMP_TARBALL}" | tr 'A-Z' 'a-z')"
+EXPECTED_SHA256="$(printf '%s' "${PLATFORM_SHA256}" | tr 'A-Z' 'a-z')"
+if [[ "${ACTUAL_SHA256}" != "${EXPECTED_SHA256}" ]]; then
+    fail "downloaded file does not match the expected SHA256 in the release manifest.
+expected: ${EXPECTED_SHA256}
+actual:   ${ACTUAL_SHA256}
+This could mean a corrupted download or a tampered release -- aborting."
+fi
+
+step "Installing to ${INSTALL_DIR}"
+# Wipe before extracting, not just overwrite in place: INSTALL_DIR holds only program files
+# (lomod and its bundled deps) never user data (that's DATA_DIR, a separate location), so
+# nothing of value is lost -- but tar extracting into an already-populated directory leaves
+# behind any file that existed in an older release and doesn't exist in the new one. That's
+# usually harmless, except for a signed bundle like Lomorage.app: an older release's signature
+# scheme can leave stray files (e.g. detached Contents/_CodeSignature/CodeDirectory et al,
+# from back when lomorage-launcher was a shell script instead of a compiled binary) sitting
+# alongside the new release's differently-shaped signature, which Gatekeeper then rejects
+# wholesale as "unsealed contents present in the bundle root" -- macOS shows that to the user
+# as a confusing, unrelated-looking "\"Lomorage\" is damaged and can't be opened" dialog.
+rm -rf "${INSTALL_DIR}"
+mkdir -p "${INSTALL_DIR}"
+tar -xzf "${TMP_TARBALL}" -C "${INSTALL_DIR}"
+chmod +x "${INSTALL_DIR}/lomod" "${INSTALL_DIR}/lomorage-start.sh" "${INSTALL_DIR}/lomorage-stop.sh"
+
+printf '%s' "${PLATFORM_VERSION}" > "${INSTALL_DIR}/version.txt"
+
+mkdir -p "${DATA_DIR}"
+cat > "${INSTALL_DIR}/lomod.args" <<ARGS
+LOMOD_ARGS=(--base "${DATA_DIR}" --exe-dir "${INSTALL_DIR}" --no-mdns --port ${PORT})
+ARGS
+
+install_app_bundle || true
+
+step "Registering autostart (per-user, no admin required)"
+register_autostart
+
+step "Registering daily auto-update check (per-user, no admin required)"
+register_autoupdate || warn "could not register the auto-update check. lomod will still run fine -- re-run this installer manually to update."
+
+step "Starting lomod"
+if wait_for_lomod; then
+    echo ""
+    echo -e "\033[32mlomorage is running: http://localhost:${PORT}\033[0m"
+    echo "  install dir: ${INSTALL_DIR}"
+    echo "  data dir:    ${DATA_DIR}"
+    echo "  it will start automatically next time you log in"
+    if [[ -x "${APP_PATH}/Contents/MacOS/lomorage-launcher" ]]; then
+        echo "  a Lomorage icon is in the menu bar -- use it to open/stop/restart/reset"
+        echo "  quit it by accident? reopen \"Lomorage\" from Spotlight, Launchpad, or ~/Applications"
+    else
+        echo "  to stop it, run: ${INSTALL_DIR}/lomorage-stop.sh"
+    fi
+    if [[ -z "${NO_BROWSER}" ]]; then
+        open "http://localhost:${PORT}" || true
+    fi
+else
+    warn "lomod was installed and launched, but didn't respond on http://localhost:${PORT} within 30s. Check that nothing else is using that port, or run ${INSTALL_DIR}/lomod directly from a terminal to see its output."
+fi

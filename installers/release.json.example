@@ -1,0 +1,21 @@
+{
+  "_comment": "This is the real production manifest at homepage/static/release.json (deployed to https://lomorage.com/release.json). Its existing top-level keys (windows, darwin, lomod, android) belong to LomoAgent (github.com/lomorage/LomoAgentWin, LomoAgentOSX) -- do not repurpose those. installers/windows/install.ps1 and installers/macos/install.sh read their own separate 'windows-cli'/'macos-cli-<arch>' keys instead, so the CLI installers' release info can never collide with LomoAgent's. Written/updated via homepage/updatever.sh's `wincli`/`maccli-arm64`/`maccli-amd64` platform options, which follow the same pattern as the existing `win`/`osx` options. The release archive is a GitHub Release asset (not a file committed directly into lomosw.github.io like LomoUpdate.zip) because a static ffmpeg build alone is well over GitHub's 100MB per-file git limit regardless of which build variant is used. Keep the URLs below the raw github.com Release asset URL (do NOT bake the gfw.lomorage.com proxy in here) -- this manifest is fetched by everyone regardless of locale, unlike the zh/en LomoAgent download links (separate static pages that can each point at a different URL). Both install.ps1 ($env:LOMOD_CHINA) and install.sh (LOMOD_CHINA=1) instead check an env var to prepend the gfw.lomorage.com proxy at download time, matching how lomosw.github.io's zh pages invoke them.",
+
+  "windows-cli": {
+    "URL": "https://github.com/lomosw/lomosw.github.io/releases/download/lomod-windows-cli-<version>/lomorage-windows-amd64-<version>.zip",
+    "SHA256": "<sha256 from lomorage-windows-amd64-<version>.zip.sha256, produced by `make release-windows`>",
+    "Version": "<version string, e.g. contents of LATEST_RELEASE for that build>"
+  },
+
+  "macos-cli-arm64": {
+    "URL": "https://github.com/lomosw/lomosw.github.io/releases/download/lomod-macos-cli-<version>/lomorage-macos-arm64-<version>.tar.gz",
+    "SHA256": "<sha256 from lomorage-macos-arm64-<version>.tar.gz.sha256, produced by `make release-macos` on Apple Silicon>",
+    "Version": "<version string, e.g. contents of LATEST_RELEASE for that build>"
+  },
+
+  "macos-cli-amd64": {
+    "URL": "https://github.com/lomosw/lomosw.github.io/releases/download/lomod-macos-cli-<version>/lomorage-macos-amd64-<version>.tar.gz",
+    "SHA256": "<sha256 from lomorage-macos-amd64-<version>.tar.gz.sha256, produced by `make release-macos` on an Intel Mac>",
+    "Version": "<version string, e.g. contents of LATEST_RELEASE for that build>"
+  }
+}

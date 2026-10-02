@@ -1,0 +1,8 @@
+{
+    "Name":"alice",
+    "Password": "alice123",
+    "Phone": "4084088888",
+    "Email": "alice@lomorage.io",
+    "NickName": "Alice",
+    "HomeDir": "/tmp/usbdisk1/alice"
+}

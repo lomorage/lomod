@@ -1,0 +1,6 @@
+Package: lomo-framed
+Version: version-replace-me
+Maintainer: Lomoware
+Architecture: arm64
+Description: lomo frame daemon
+Depends: samba, samba-common-bin, smbclient, cifs-utils

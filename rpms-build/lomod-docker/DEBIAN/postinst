@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ex
+
+chmod +x /opt/lomorage/bin/*
+
+if [ $(systemctl is-enabled lomod) != 'enabled' ];  then
+  systemctl enable lomod || true
+fi
+systemctl daemon-reload || true
+systemctl restart lomod || true

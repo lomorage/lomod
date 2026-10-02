@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="shortcut icon" href="static/lomo/img/favicon.ico?v=memory-embrace-1" type="image/x-icon" />
+        <link href="static/bootstrap-4.3.1/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+        <link rel="stylesheet" type="text/css" href="static/lomo/css/theme.css?v=memory-style-1">
+        <link rel="stylesheet" type="text/css" href="static/lomo/css/main.css?v=memory-style-1">
+        <script src="static/jquery/jquery.min.js"></script>
+        <script src="static/bootstrap-4.3.1/js/bootstrap.min.js"></script>
+        <script src="static/polyglot/polyglot.min.js"></script>
+        <script src="static/lomo/js/i18n.js"></script>
+        <title>{{gettext "Login"}}</title>
+    </head>
+    <body>
+        <div id="login">
+            <img src="static/lomo/img/logo-128.png?v=memory-embrace-1" alt="" class="lomo-login-mark">
+            <h3 class="lomo-login-title">{{gettext "Lomorage Gallery"}}<span class="lomo-login-sub">{{gettext "Login form"}}</span></h3>
+            <div class="container">
+                <div id="login-row" class="row justify-content-center align-items-center">
+                    <div id="login-column" class="col-md-6">
+                        <div id="login-box" class="col-md-12">
+                            <form id="login-form" class="form" action="" method="get">
+                                <div class="form-group">
+                                    <label for="username">{{gettext "Username"}}</label>
+                                    <input type="text" name="username" id="username" class="form-control" autocomplete="username" autofocus>
+                                </div>
+                                <div class="form-group">
+                                    <label for="password">{{gettext "Password"}}</label>
+                                    <input type="password" name="password" id="password" class="form-control" autocomplete="current-password">
+                                </div>
+                                <div id="login-error" class="text-danger" style="display:none;margin-bottom:10px;" role="alert"></div>
+                                <div class="form-group text-center">
+                                    <!--
+                                    <label for="remember-me" class="text-info"><span>Remember me</span> <span><input id="remember-me" name="remember-me" type="checkbox"></span></label><br>
+                                    -->
+                                    <input type="hidden" name="device" value="broswer" id="device" />
+                                    <input type="submit" name="submit" id="submit" class="btn btn-info btn-md" value="{{gettext "Submit"}}">
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="lomo-foot">{{.Foot}}</div>
+        </div>
+
+        <script src="static/lomo/js/conf.js"></script>
+        <script src="static/lomo/js/argon2-client.js"></script>
+        <script src="static/lomo/js/login.js"></script>
+    </body>
+</html>
