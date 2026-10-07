@@ -16,3 +16,9 @@ func SetLomoGroupName(g string) {
 func MoveFile(src, dst string) error {
 	return cmd.Exec("move", src, dst)
 }
+
+// SyncDir is a no-op on Windows, which can't open a directory for flushing; NTFS journals
+// renames itself.
+func SyncDir(dir string) error {
+	return nil
+}

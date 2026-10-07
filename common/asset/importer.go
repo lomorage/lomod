@@ -161,6 +161,14 @@ func CreateAsset(ctx context.Context, tx *sql.Tx, userid, deviceid, extid int, s
 			return "", "", err
 		}
 	}
+	if move {
+		// Make the rename(s) durable before the caller commits the DB row and replies, so a
+		// power loss can't leave a committed asset whose file is still under its temp name.
+		// Some mounts (FUSE, SMB) reject fsync on a directory; that must not fail the upload.
+		if err := common.SyncDir(masterdir); err != nil {
+			logrus.Warnf("sync dir %s: %v", masterdir, err)
+		}
+	}
 	logrus.Infof("created asset %s: %s @ %d-%d-%d from %s", assetFilename, a.Hash, createTime.Year(), createTime.Month(), createTime.Day(), srcFile)
 
 	a.Name, err = ext.MkAssetNameByID(int(assetid), extid)
