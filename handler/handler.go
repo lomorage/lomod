@@ -610,6 +610,7 @@ func (h *Handler) CreateRouter() *mux.Router {
 	r.HandleFunc("/assets/hide", h.unhideAssets).Methods("DELETE")
 	r.HandleFunc("/assets/favorite", h.setAssetsFavorite).Methods("POST")
 	r.HandleFunc("/assets/favorite", h.unsetAssetsFavorite).Methods("DELETE")
+	r.HandleFunc("/assets/verify", h.verifyAssets).Methods("POST")
 
 	// merkle tree
 	r.HandleFunc("/assets/merkletree", h.listAssetsYearMonth).Methods("GET")

@@ -175,6 +175,11 @@ type Runner struct {
 	TotalScan     map[int][]int // [# of assets in FS, # of images of livephoto in FS, # of assets in FS]
 
 	BadAssets map[int][][]InconsistentAsset // userID - inconsistent type - assets
+
+	// Unverified holds every DB asset this run could not confirm on disk (asset ID ->
+	// check type). An asset in the run's DB snapshot that is not in here was found in the
+	// file system with a matching hash.
+	Unverified map[int]int
 }
 
 // NewRunner creates new consistent run
@@ -325,6 +330,7 @@ func (r *Runner) Report(w io.Writer, plain bool) {
 func (r *Runner) Start(users []user.User, assetsDB map[int]map[int][][][]types.Asset) error {
 	r.TotalScan = map[int][]int{}
 	r.BadAssets = map[int][][]InconsistentAsset{}
+	r.Unverified = map[int]int{}
 	r.usernames = map[int]string{}
 	for _, user := range users {
 		r.usernames[user.ID] = user.Name
@@ -719,6 +725,7 @@ func (r *Runner) compareDBWithFS(users []user.User, assetsDB map[int]map[int][][
 		if !ok {
 			as := getBadAssets(UserMissInFS, badAssets)
 			badAssets[UserMissInFS] = append(as, InconsistentAsset{UserID: uid})
+			r.markAllUnverified(userAssetsDB, UserMissInFS)
 			continue
 		}
 		var user user.User
@@ -732,6 +739,7 @@ func (r *Runner) compareDBWithFS(users []user.User, assetsDB map[int]map[int][][
 		if !found {
 			as := getBadAssets(UserMissInDB, badAssets)
 			badAssets[UserMissInDB] = append(as, InconsistentAsset{UserID: uid})
+			r.markAllUnverified(userAssetsDB, UserMissInDB)
 			continue
 		}
 
@@ -766,6 +774,7 @@ func (r *Runner) compareAssetDBWithFS(user user.User, asset types.Asset, assetsF
 	if !ok {
 		as := getBadAssets(MasterDirMiss, badAssets)
 		badAssets[MasterDirMiss] = append(as, InconsistentAsset{UserID: user.ID})
+		r.markUnverified(asset, MasterDirMiss)
 		return
 	}
 
@@ -774,8 +783,11 @@ func (r *Runner) compareAssetDBWithFS(user user.User, asset types.Asset, assetsF
 	if !ok {
 		_, ok := missAssets[asset.Name]
 		if ok {
+			// already reported from the file system side (zero size, live photo without zip)
+			r.markUnverified(asset, AssetZeroSize)
 			return
 		}
+		r.markUnverified(asset, AssetMissInFS)
 		as := getBadAssets(AssetMissInFS, badAssets)
 		nn := ext.NormalizeAssetNameString(y, m, d, asset.Name)
 		badAssets[AssetMissInFS] = append(as,
@@ -850,6 +862,27 @@ func (r *Runner) compareAssetDBWithFS(user user.User, asset types.Asset, assetsF
 	}
 	badAssets[PreviewMiss] = append(as, InconsistentAsset{UserID: user.ID, Asset1Name: masterFilename, Asset1Path: masterPath,
 		Asset2Path: preview})
+}
+
+func (r *Runner) markUnverified(asset types.Asset, typ int) {
+	id, err := ext.GetAssetIDByName(asset.Name)
+	if err != nil {
+		r.logger.Warnf("unverified asset with invalid name %q: %v", asset.Name, err)
+		return
+	}
+	r.Unverified[id] = typ
+}
+
+func (r *Runner) markAllUnverified(userAssetsDB map[int][][][]types.Asset, typ int) {
+	for _, assetsY := range userAssetsDB {
+		for _, assetsM := range assetsY {
+			for _, assetsD := range assetsM {
+				for _, asset := range assetsD {
+					r.markUnverified(asset, typ)
+				}
+			}
+		}
+	}
 }
 
 // compareFSWithDB compares assets in file system with DB. File system is the base to compare

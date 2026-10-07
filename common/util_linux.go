@@ -28,3 +28,14 @@ func SetLomoGroupName(g string) {
 func MoveFile(src, dst string) error {
 	return cmd.Exec("mv", src, dst)
 }
+
+// SyncDir flushes a directory entry (e.g. a file just renamed into it) to disk, so the
+// rename survives a power loss.
+func SyncDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
+}
