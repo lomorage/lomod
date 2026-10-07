@@ -100,15 +100,15 @@ func (s *storeSuite) addAsset(c *C, extension string) (int, string, string) {
 }
 
 func (s *storeSuite) verify(c *C, hashes ...string) ([]AssetVerify, *CheckRun) {
-	var results []AssetVerify
-	var run *CheckRun
+	var lookup *VerifyLookup
 	s.inTx(c, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
-		results, run, err = VerifyAssets(ctx, tx, s.userID, hashes)
+		lookup, err = LookupAssets(ctx, tx, s.userID, hashes)
 		return err
 	})
+	results := lookup.Check()
 	c.Assert(results, HasLen, len(hashes))
-	return results, run
+	return results, lookup.Run
 }
 
 func (s *storeSuite) completeRun(c *C, start time.Time, maxAssetID int, unverified map[int]int) int64 {
@@ -157,8 +157,12 @@ func (s *storeSuite) TestOtherUsersAssetIsNotFound(c *C) {
 			return err
 		}
 		eve, _ := res.LastInsertId()
-		results, _, err = VerifyAssets(ctx, tx, int(eve), []string{hash})
-		return err
+		lookup, err := LookupAssets(ctx, tx, int(eve), []string{hash})
+		if err != nil {
+			return err
+		}
+		results = lookup.Check()
+		return nil
 	})
 	c.Assert(results[0].Status, Equals, VerifyNotFound)
 }
@@ -218,6 +222,14 @@ func (s *storeSuite) TestCompletedCheckUpgradesEvidenceOrMarksBad(c *C) {
 	c.Assert(results[1].Status, Equals, VerifyBad)
 	c.Assert(results[2].Status, Equals, VerifyOK)
 	c.Assert(results[2].Evidence, Equals, EvidenceUpload)
+}
+
+func (s *storeSuite) TestSameHashTwiceGetsTheSameAnswer(c *C) {
+	id, hash, _ := s.addAsset(c, "jpg")
+	s.completeRun(c, time.Now(), id, map[int]int{id: AssetMissInFS})
+	results, _ := s.verify(c, hash, hash)
+	c.Assert(results[0].Status, Equals, VerifyBad)
+	c.Assert(results[1].Status, Equals, VerifyBad)
 }
 
 func (s *storeSuite) TestReuploadAfterDeleteIsNotHitByOldBadRecord(c *C) {

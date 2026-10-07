@@ -398,10 +398,10 @@ func getBadAssets(typ int, badAssets map[int][]InconsistentAsset) []Inconsistent
 
 // scanAssetsFS scans local file system, and build file tree
 func (r *Runner) scanAssetsFS(users []user.User) (map[int]map[string]AssetFileInfo,
-	map[int][]InconsistentAsset, map[string]struct{}, map[int]map[string]InconsistentAsset, error) {
+	map[int][]InconsistentAsset, map[string]int, map[int]map[string]InconsistentAsset, error) {
 	badAssets := map[int][]InconsistentAsset{}
 	dupAssets := map[int]map[string]InconsistentAsset{}
-	missAssets := map[string]struct{}{} // index: assetID.ext, which is unique
+	missAssets := map[string]int{} // index: assetID.ext, which is unique; value: check type
 	assets := map[int]map[string]AssetFileInfo{}
 	for _, u := range users {
 		assetsU := map[string]AssetFileInfo{}
@@ -472,7 +472,7 @@ func (r *Runner) scanAssetsFS(users []user.User) (map[int]map[string]AssetFileIn
 					badAssets[GeneralError] = append(as, InconsistentAsset{UserID: u.ID, Asset1Path: p, Asset1Error: err.Error()})
 					return nil
 				}
-				missAssets[strconv.Itoa(meta.ID)+"."+meta.extension] = struct{}{}
+				missAssets[strconv.Itoa(meta.ID)+"."+meta.extension] = code
 				return nil
 			}
 			if ext.IsLivePhotoImage(info.Name()) {
@@ -521,7 +521,7 @@ func (r *Runner) scanAssetsFS(users []user.User) (map[int]map[string]AssetFileIn
 	return assets, badAssets, missAssets, dupAssets, nil
 }
 
-func (r *Runner) compareLivephotos(uid int, badAssets map[int][]InconsistentAsset, missAssets map[string]struct{},
+func (r *Runner) compareLivephotos(uid int, badAssets map[int][]InconsistentAsset, missAssets map[string]int,
 	livephotos, livephotoImages map[string]string, livephotoCheck, livephotoImageCheck map[string]bool) {
 	// all live photos should have corresponding master image
 	missLivePhotoImages := map[string]struct{}{}
@@ -554,7 +554,7 @@ func (r *Runner) compareLivephotos(uid int, badAssets map[int][]InconsistentAsse
 			badAssets[GeneralError] = append(as, InconsistentAsset{UserID: uid, Asset1Name: k, Asset1Path: v, Asset1Error: "invalid asset filename"})
 			continue
 		}
-		missAssets[ext.MkAssetName(parts[1], ext.ZIPString)] = struct{}{}
+		missAssets[ext.MkAssetName(parts[1], ext.ZIPString)] = LivePhotoZIPNotExist
 	}
 
 	for k, ok := range livephotoCheck {
@@ -719,7 +719,7 @@ func (r *Runner) extractAssetMeta(assetPath string, calcHash bool) (AssetFileInf
 
 // compareDBWithFS compares assets db with file system. DB is the base to compare
 func (r *Runner) compareDBWithFS(users []user.User, assetsDB map[int]map[int][][][]types.Asset, assetsFS map[int]map[string]AssetFileInfo,
-	badAssets map[int][]InconsistentAsset, missAssets map[string]struct{}) {
+	badAssets map[int][]InconsistentAsset, missAssets map[string]int) {
 	for uid, userAssetsDB := range assetsDB {
 		userAssetsFS, ok := assetsFS[uid]
 		if !ok {
@@ -764,7 +764,7 @@ func (r *Runner) compareDBWithFS(users []user.User, assetsDB map[int]map[int][][
 }
 
 func (r *Runner) compareAssetDBWithFS(user user.User, asset types.Asset, assetsFS map[string]AssetFileInfo,
-	badAssets map[int][]InconsistentAsset, missAssets map[string]struct{}, y, m, d int) {
+	badAssets map[int][]InconsistentAsset, missAssets map[string]int, y, m, d int) {
 	master, preview, _ := common.GetUserPhotoMasterPreviewDirCreate(user.HomeDir, y, m, d, 0)
 	ok, err := common.IsFileExist(master)
 	if err != nil {
@@ -781,10 +781,10 @@ func (r *Runner) compareAssetDBWithFS(user user.User, asset types.Asset, assetsF
 	// note that is possible to have duplicate hash, so not use the result here
 	_, ok = assetsFS[asset.Hash]
 	if !ok {
-		_, ok := missAssets[asset.Name]
+		typ, ok := missAssets[asset.Name]
 		if ok {
 			// already reported from the file system side (zero size, live photo without zip)
-			r.markUnverified(asset, AssetZeroSize)
+			r.markUnverified(asset, typ)
 			return
 		}
 		r.markUnverified(asset, AssetMissInFS)
