@@ -453,72 +453,161 @@ func vipsHeightOptions(height uint) []*vips.Option {
 	return options
 }
 
-func (r *Runner) generatePreviewWebp(assetpath, previewpath string, width, height uint) error {
-	defer func() {
-		if err := recover(); err != nil {
-			logrus.Warnf("while generating webp preview, panic occurred: %s", err)
-		}
-	}()
-
-	outImage, err := vips.Thumbnail(assetpath, int(width), vipsHeightOptions(height)...)
-	if err != nil {
-		if outImage != nil {
-			vips.FreeImage(outImage)
-		}
-		return errors.Wrap(err, "while generating jpg thumbnail")
+// NeedsDecodeFallback reports whether a file vips failed to read should be retried through an
+// external decoder: libvips' Windows builds ship libheif with only the AV1 decoder (no HEVC,
+// for patent reasons), so iPhone HEIC photos can't be decoded by vips there.
+func NeedsDecodeFallback(path string) bool {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
+	case ext.HEICString, ext.HEIFString:
+		return true
 	}
-	defer vips.FreeImage(outImage)
+	return false
+}
 
-	vips.RemoveImageMetadata(outImage, "jpeg-thumbnail-data")
-	vips.RemoveImageMetadata(outImage, "exif-data")
-	vips.RemoveImageMetadata(outImage, "xmp-data")
-	vips.RemoveImageMetadata(outImage, "iptc-data")
-	vips.RemoveImageMetadata(outImage, "icc-profile-data")
+// FirstLine returns err's first line; govips appends a goroutine stack to its errors.
+func FirstLine(err error) string {
+	return strings.SplitN(err.Error(), "\n", 2)[0]
+}
 
-	if err := vips.Webpsave(outImage, previewpath); err != nil {
-		return errors.Wrap(err, "while saving webp preview")
+// DecodeToTemp decodes src with decode into an uncompressed temp file next to dst, for vips to
+// read instead of src. The caller must call cleanup once vips is done with the image.
+func DecodeToTemp(decode func(src, dst string) error, src, dst string) (string, func(), error) {
+	// unique per call: a background worker and an on-demand request can decode the same
+	// asset for the same preview at once
+	dir, file := filepath.Split(dst)
+	f, err := ioutil.TempFile(dir, "."+file+".decoded.*.ppm")
+	if err != nil {
+		return "", nil, err
+	}
+	tmp := f.Name()
+	f.Close()
+	cleanup := func() {
+		if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+			logrus.Warnf("remove decoded temp file %s: %v", tmp, err)
+		}
+	}
+	if err := decode(src, tmp); err != nil {
+		cleanup()
+		return "", nil, errors.Wrapf(err, "decode %s", src)
+	}
+	return tmp, cleanup, nil
+}
+
+type heifDecoder int
+
+const (
+	heifUntried heifDecoder = iota
+	heifByVips
+	heifByFallback
+)
+
+// heifSupport remembers whether this libvips build decodes HEIF. Until the first HEIF file
+// settles it, vips attempts are serialized: concurrent failed loads of one file leak its handle
+// in libvips on Windows, which then can't be moved or deleted until lomod restarts.
+var heifSupport struct {
+	sync.Mutex
+	decoder heifDecoder
+}
+
+// WithDecodeFallback runs attempt on src, and for HEIF files vips can't decode (see
+// NeedsDecodeFallback) runs it again on a copy decoded by decode, which may be nil.
+// attempt must do all the vips work (load and save): vips reads HEIF lazily, so a missing
+// decoder may only show up when saving.
+func WithDecodeFallback(src, dst string, decode func(src, dst string) error, attempt func(path string) error) error {
+	if decode == nil || !NeedsDecodeFallback(src) {
+		return attempt(src)
+	}
+
+	heifSupport.Lock()
+	decoder := heifSupport.decoder
+	untried := decoder == heifUntried
+	if untried {
+		defer heifSupport.Unlock()
+	} else {
+		heifSupport.Unlock()
+	}
+
+	var err error
+	if decoder == heifByFallback {
+		err = errors.New("libvips can't decode HEIF here")
+	} else {
+		if err = attempt(src); err == nil {
+			if untried {
+				heifSupport.decoder = heifByVips
+			}
+			return nil
+		}
+		logrus.Infof("vips can't read %s (%s), decoding it with ffmpeg", src, FirstLine(err))
+	}
+
+	decoded, cleanup, derr := DecodeToTemp(decode, src, dst)
+	if derr != nil {
+		return errors.Wrapf(err, "fallback: %v", derr)
+	}
+	defer cleanup()
+	if err := attempt(decoded); err != nil {
+		return err
+	}
+	if untried {
+		heifSupport.decoder = heifByFallback
+		logrus.Warnf("libvips can't decode HEIF (%s), using ffmpeg for HEIC/HEIF from now on", src)
 	}
 	return nil
+}
+
+// DecodeImage decodes a still image vips can't read into outpath -- see NeedsDecodeFallback.
+func (r *Runner) DecodeImage(assetpath, outpath string) error {
+	return r.avengine.DecodeImage(assetpath, outpath)
+}
+
+func (r *Runner) generatePreviewWebp(assetpath, previewpath string, width, height uint) error {
+	return r.generateThumbnail(assetpath, previewpath, width, height, ext.WebPString)
 }
 
 func (r *Runner) generatePreviewJPGByResize(assetpath, previewpath string, width, height uint) error {
-	outImage, err := vips.Thumbnail(assetpath, int(width), vipsHeightOptions(height)...)
-	if err != nil {
-		if outImage != nil {
-			vips.FreeImage(outImage)
-		}
-		return errors.Wrap(err, "while generating jpg thumbnail")
-	}
-	defer vips.FreeImage(outImage)
-
-	vips.RemoveImageMetadata(outImage, "jpeg-thumbnail-data")
-	vips.RemoveImageMetadata(outImage, "exif-data")
-	vips.RemoveImageMetadata(outImage, "xmp-data")
-	vips.RemoveImageMetadata(outImage, "iptc-data")
-	vips.RemoveImageMetadata(outImage, "icc-profile-data")
-
-	if err := vips.Jpegsave(outImage, previewpath); err != nil {
-		return errors.Wrap(err, "while saving jpg preview")
-	}
-	return nil
+	return r.generateThumbnail(assetpath, previewpath, width, height, ext.JPGString)
 }
 
 func (r *Runner) generatePreviewPNG(assetpath, previewpath string, width, height uint) error {
-	outImage, err := vips.Thumbnail(assetpath, int(width), vipsHeightOptions(height)...)
+	return r.generateThumbnail(assetpath, previewpath, width, height, ext.PNGString)
+}
+
+func (r *Runner) generateThumbnail(assetpath, previewpath string, width, height uint, format string) error {
+	return WithDecodeFallback(assetpath, previewpath, r.DecodeImage, func(src string) error {
+		return thumbnailTo(src, previewpath, width, height, format)
+	})
+}
+
+func thumbnailTo(src, previewpath string, width, height uint, format string) error {
+	outImage, err := vips.Thumbnail(src, int(width), vipsHeightOptions(height)...)
 	if err != nil {
 		if outImage != nil {
 			vips.FreeImage(outImage)
 		}
-		return errors.Wrap(err, "while generating png thumbnail")
+		return errors.Wrapf(err, "while generating %s thumbnail", format)
 	}
 	defer vips.FreeImage(outImage)
 
+	if format != ext.PNGString {
+		vips.RemoveImageMetadata(outImage, "jpeg-thumbnail-data")
+		vips.RemoveImageMetadata(outImage, "exif-data")
+	}
 	vips.RemoveImageMetadata(outImage, "xmp-data")
 	vips.RemoveImageMetadata(outImage, "iptc-data")
 	vips.RemoveImageMetadata(outImage, "icc-profile-data")
 
-	if err := vips.Pngsave(outImage, previewpath); err != nil {
-		return errors.Wrap(err, "while saving png preview")
+	switch format {
+	case ext.JPGString:
+		err = vips.Jpegsave(outImage, previewpath)
+	case ext.PNGString:
+		err = vips.Pngsave(outImage, previewpath)
+	default:
+		err = vips.Webpsave(outImage, previewpath)
+	}
+	if err != nil {
+		// a failed save can leave a partial file that checkFile would later serve as cached
+		os.Remove(previewpath)
+		return errors.Wrapf(err, "while saving %s preview", format)
 	}
 	return nil
 }

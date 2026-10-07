@@ -15,6 +15,7 @@ import (
 
 	"bitbucket.org/lomoware/lomo-backend/common"
 	"bitbucket.org/lomoware/lomo-backend/common/ext"
+	"bitbucket.org/lomoware/lomo-backend/common/preview"
 	"bitbucket.org/lomoware/lomo-backend/common/types"
 	"bitbucket.org/lomoware/lomo-backend/common/user"
 	"github.com/leslie-wang/govips/pkg/vips"
@@ -170,7 +171,11 @@ func GenerateAssetPreview(ctx context.Context, masterFile, previewPath, assetPre
 	// TODO: live photo transcoding need support
 	if width == 0 && height == 0 {
 		previewFile := filepath.Join(previewPath, assetPreviewPrefix+"."+newExt)
-		return masterFile, previewFile, XcodeImage(ctx, masterFile, previewFile, folderPerm)
+		var decode func(src, dst string) error
+		if runner != nil {
+			decode = runner.DecodeImage
+		}
+		return masterFile, previewFile, XcodeImage(ctx, masterFile, previewFile, folderPerm, decode)
 	}
 
 	refFile := masterFile
@@ -638,8 +643,14 @@ func GetPartialUploadContent(homeDir, hash string) (*types.LastSavedAsset, error
 	return lsa, nil
 }
 
-// XcodeImage transcode image to target file
-func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm os.FileMode) error {
+// maxXcodeDimension bounds XcodeImage's thumbnail box; with size=down it never upscales,
+// so any image smaller than this is transcoded at its original size.
+const maxXcodeDimension = 100000
+
+// XcodeImage transcodes assetFile to previewFile's format at full size. decode, if not nil, is
+// used for formats vips can't read itself (see preview.NeedsDecodeFallback).
+func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm os.FileMode,
+	decode func(src, dst string) error) error {
 	if !ext.IsImageFile(assetFile) {
 		return errors.Errorf("master asset %s is not image", assetFile)
 	} else if !ext.IsImageFile(previewFile) {
@@ -662,8 +673,26 @@ func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm o
 		return err
 	}
 
-	outImage, err := vips.Vipsload(assetFile)
+	err := preview.WithDecodeFallback(assetFile, previewFile, decode, func(src string) error {
+		return xcodeImageOnce(src, previewFile)
+	})
 	if err != nil {
+		logrus.Debugf("error transcode %s -> %s: %s", assetFile, previewFile, err)
+		return err
+	}
+	logrus.Debugf("finish transcode %s -> %s", assetFile, previewFile)
+	return nil
+}
+
+func xcodeImageOnce(src, previewFile string) error {
+	// thumbnail with size=down and an out-of-range box keeps the original size; unlike
+	// vipsload (which only reads vips' own .v format) it loads any format and autorotates.
+	outImage, err := vips.Thumbnail(src, maxXcodeDimension,
+		vips.InputInt("height", maxXcodeDimension), vips.InputString("size", "down"))
+	if err != nil {
+		if outImage != nil {
+			vips.FreeImage(outImage)
+		}
 		return err
 	}
 	defer vips.FreeImage(outImage)
@@ -675,18 +704,15 @@ func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm o
 	vips.RemoveImageMetadata(outImage, "icc-profile-data")
 
 	if strings.TrimPrefix(filepath.Ext(previewFile), ".") == ext.JPGString {
-		if err := vips.Jpegsave(outImage, previewFile); err != nil {
-			logrus.Debugf("error transcode %s -> %s: %s", assetFile, previewFile, err)
-			return err
-		}
+		err = vips.Jpegsave(outImage, previewFile)
 	} else {
-		if err := vips.Webpsave(outImage, previewFile); err != nil {
-			logrus.Debugf("error transcode %s -> %s: %s", assetFile, previewFile, err)
-			return err
-		}
+		err = vips.Webpsave(outImage, previewFile)
 	}
-	logrus.Debugf("finish transcode %s -> %s", assetFile, previewFile)
-	return nil
+	if err != nil {
+		// a failed save can leave a partial file that the size check above would later serve
+		os.Remove(previewFile)
+	}
+	return err
 }
 
 // UpdateAssetTime update asset time and move both master and preview to corresponding location

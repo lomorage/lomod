@@ -37,6 +37,9 @@ type Engine interface {
 	ProbeVideoInfo(filename string) (*VideoProbeInfo, error)
 	XcodeVideoToVideo(ctx context.Context, assetpath, previewpath string, width, height uint, stream *MediaStream) error
 	XcodeVideoToImage(assetpath, previewpath string, width, height uint, stream *MediaStream) error
+	// DecodeImage decodes a still image into an uncompressed file (format from outpath's
+	// extension) with HEIF rotation and tiling applied, for formats vips cannot read itself.
+	DecodeImage(assetpath, outpath string) error
 }
 
 func checkRotate(width, height uint, stream *MediaStream) (int, int, string) {
