@@ -377,7 +377,7 @@ func (h *Handler) receiveAsset(w http.ResponseWriter, r *http.Request) {
 
 	// Generate outside the DB transaction above -- see ResolveAssetPreview.
 	p, err := share.ResolveAssetPreview(context.Background(), masterFile, previewPath, assetPreviewPrefix,
-		assetID, extID, 0, 0, runner, h.conf.FolderPerm)
+		assetID, extID, 0, 0, ext.JPG, runner, h.conf.FolderPerm)
 	if err != nil {
 		if common.IsErrNoRows(err) {
 			common.WriteError(w, common.ErrNotExistAsset)
@@ -417,6 +417,15 @@ func (h *Handler) receiveAssetPreview(w http.ResponseWriter, r *http.Request) {
 	if he, err := strconv.Atoi(q.Get("height")); err == nil && he > 0 {
 		height = he
 	}
+	// Same as /preview: the codec must match what the preview runner pre-generates
+	// (WebP unless --use-jpg), or every request transcodes the original again.
+	icodec := ext.JPG
+	if ic := q.Get(common.QueryKeyICodec); ic != "" {
+		if icodec, err = ext.GetExtID(ic); err != nil {
+			common.WriteError(w, err)
+			return
+		}
+	}
 
 	var (
 		masterFile, previewPath, assetPreviewPrefix string
@@ -438,7 +447,7 @@ func (h *Handler) receiveAssetPreview(w http.ResponseWriter, r *http.Request) {
 
 	// Generate outside the DB transaction above -- see ResolveAssetPreview.
 	p, err := share.ResolveAssetPreview(context.Background(), masterFile, previewPath, assetPreviewPrefix,
-		assetID, extID, width, height, h.previewRunner, h.conf.FolderPerm)
+		assetID, extID, width, height, icodec, h.previewRunner, h.conf.FolderPerm)
 	if err != nil {
 		if common.IsErrNoRows(err) {
 			common.WriteError(w, common.ErrNotExistAsset)

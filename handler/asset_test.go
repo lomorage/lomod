@@ -592,14 +592,14 @@ func (ts *mainSuite) validateDir(c *C, p string, numFiles int, dir bool) {
 
 func (ts *mainSuite) importAsset(c *C, p, url string) *types.Asset {
 	var a io.ReadCloser
-	if path.IsAbs(p) {
+	if filepath.IsAbs(p) {
 		var err error
 		a, err = os.Open(p)
 		c.Assert(err, IsNil)
 	} else {
 		wd, err := os.Getwd()
 		c.Assert(err, IsNil)
-		a, err = os.Open(path.Join(wd, p))
+		a, err = os.Open(filepath.Join(wd, p))
 		c.Assert(err, IsNil)
 	}
 	defer a.Close()

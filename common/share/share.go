@@ -505,10 +505,10 @@ func LocateAssetPath(ctx context.Context, tx *sql.Tx, shareID uint64, receiverID
 // transaction. previewRunner == nil returns the master file path unchanged, matching
 // LocateAsset's long-standing "no codec requested" behavior.
 func ResolveAssetPreview(ctx context.Context, masterFile, previewPath, assetPreviewPrefix string,
-	assetID, extID, width, height int, previewRunner types.PreviewRunner, folderPerm os.FileMode) (string, error) {
+	assetID, extID, width, height, icodec int, previewRunner types.PreviewRunner,
+	folderPerm os.FileMode) (string, error) {
 	var previewCodec *int
 	if previewRunner != nil {
-		icodec := ext.JPG
 		previewCodec = &icodec
 	}
 	masterfile, previewfile, err := asset.GenerateAssetPreview(ctx, masterFile, previewPath, assetPreviewPrefix,
@@ -522,7 +522,7 @@ func ResolveAssetPreview(ctx context.Context, masterFile, previewPath, assetPrev
 // LocateAsset find the asset path. Holds tx for the duration of any preview generation -- see
 // LocateAssetPath/ResolveAssetPreview for hot paths where that transcode can be slow and
 // holding a DB transaction across it would starve unrelated requests.
-func LocateAsset(ctx context.Context, tx *sql.Tx, shareID uint64, receiverID, width, height int,
+func LocateAsset(ctx context.Context, tx *sql.Tx, shareID uint64, receiverID, width, height, icodec int,
 	previewRunner types.PreviewRunner, folderPerm os.FileMode) (string, error) {
 	masterFile, previewPath, assetPreviewPrefix, assetID, extID, err :=
 		LocateAssetPath(ctx, tx, shareID, receiverID, folderPerm)
@@ -530,7 +530,7 @@ func LocateAsset(ctx context.Context, tx *sql.Tx, shareID uint64, receiverID, wi
 		return "", err
 	}
 	return ResolveAssetPreview(ctx, masterFile, previewPath, assetPreviewPrefix, assetID, extID,
-		width, height, previewRunner, folderPerm)
+		width, height, icodec, previewRunner, folderPerm)
 }
 
 // GetShareIDs returns all share for one user's asset

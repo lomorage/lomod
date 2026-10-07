@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	rice "github.com/GeertJohan/go.rice"
@@ -20,7 +21,7 @@ import (
 )
 
 func (h *Handler) loadUIHandler(r *mux.Router) {
-	r.HandleFunc("/static/lomo/js/conf.js", ConfJsHandler)
+	r.HandleFunc("/static/lomo/js/conf.js", h.confJsHandler)
 	box := rice.MustFindBox("../cmd/lomod/static")
 	staticFileServer := http.StripPrefix("/static/", http.FileServer(box.HTTPBox()))
 	r.PathPrefix("/static/").Handler(staticFileServer)
@@ -877,6 +878,11 @@ var CONFIG = {
 	SCAN_BROWSE_URI: 'assets/scan/browse',
 	SCAN_STATUS_URI: 'assets/scan/status',
 	DEV_SERVER_KEY: 'lomo_dev_server',
+	// Whether this lomod pre-generates previews as WebP (the /system WebpPreview flag).
+	// Preview URLs must ask for the same codec, or lomod transcodes the original on
+	// every request instead of serving the pre-generated file. A ?server= override is
+	// assumed to use the same codec as the lomod that served this page.
+	WEBP_PREVIEW: __WEBP_PREVIEW__,
 
 	// Lets a developer point this page at a different lomod instance than the
 	// one that served it, e.g. to test local frontend changes against a
@@ -921,8 +927,14 @@ var CONFIG = {
 		}
     },
 
+	// 320 is one of the widths lomod pre-generates (75/320/640 by default).
+	previewQuery: function() {
+		return "?width=320&height=-1" + (CONFIG.WEBP_PREVIEW ? "&icodec=webp" : "") +
+			"&token=" + sessionStorage.getItem("token");
+	},
+
     getPreviewUrl: function(name) {
-        return CONFIG.getServiceUrl() + '/' + CONFIG.PREVIEW_URI + '/' + name + "?width=320&height=-1&token=" + sessionStorage.getItem("token");
+        return CONFIG.getServiceUrl() + '/' + CONFIG.PREVIEW_URI + '/' + name + CONFIG.previewQuery();
 	},
 
 	getMonthLevelMerkleTreeUrl: function() {
@@ -984,7 +996,7 @@ var CONFIG = {
     },
 
     getInboxPreviewUrl: function(shareid) {
-        return CONFIG.getServiceUrl() + '/' + CONFIG.RECEIVE_PREVIEW_URI + '/' + shareid + "?width=320&height=-1&token=" + sessionStorage.getItem("token");
+        return CONFIG.getServiceUrl() + '/' + CONFIG.RECEIVE_PREVIEW_URI + '/' + shareid + CONFIG.previewQuery();
 	}
 }
 
@@ -1004,7 +1016,8 @@ CONFIG.initDevServerOverride();
 })();
 `
 
-// ConfJsHandler server conf.js
-func ConfJsHandler(response http.ResponseWriter, request *http.Request) {
-	io.WriteString(response, ConfJsTemplate)
+// confJsHandler serves conf.js, filling in this server's preview codec
+func (h *Handler) confJsHandler(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	io.WriteString(response, strings.Replace(ConfJsTemplate, "__WEBP_PREVIEW__", strconv.FormatBool(!h.conf.UseJpg), 1))
 }
