@@ -121,80 +121,138 @@ func MaxAssetID(assetsDB map[int]map[int][][][]types.Asset) int {
 	return maxID
 }
 
-// VerifyAssets tells, for each hash, whether userID's copy is safe to rely on. The caller
-// checks the user's mount status first and reports VerifyUnavailable without calling this.
-func VerifyAssets(ctx context.Context, tx *sql.Tx, userID int, hashes []string) ([]AssetVerify, *CheckRun, error) {
+// VerifyLookup is the DB half of a verify request: everything needed to answer it, read in
+// one transaction. Check then touches the file system with the transaction already closed,
+// because lomod runs SQLite on a single connection and stat on a sleeping USB disk can
+// take seconds.
+type VerifyLookup struct {
+	Run     *CheckRun
+	homeDir string
+	assets  []assetLookup
+}
+
+type assetLookup struct {
+	hash       string // as sent by the client
+	found      bool
+	linked     bool
+	masterFile string
+	extID      int
+	covered    bool // asset id <= Run.MaxAssetID
+	bad        bool // in Run's ccheck_bad
+	uploadTime int64
+}
+
+// LookupAssets reads userID's records for hashes, the latest completed consistency check, and
+// which of the assets it flagged.
+func LookupAssets(ctx context.Context, tx *sql.Tx, userID int, hashes []string) (*VerifyLookup, error) {
 	run, err := LatestRun(ctx, tx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	homeDir, err := user.GetHomedir(ctx, tx, userID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	master, _ := common.GetUserPhotoDir(homeDir)
-	if ok, err := common.IsFileExist(master); err != nil || !ok {
-		// disk not mounted or library moved: nothing can be confirmed, but nothing is known lost
-		results := make([]AssetVerify, len(hashes))
-		for i, h := range hashes {
-			results[i] = AssetVerify{Hash: h, Status: VerifyUnavailable}
+	l := &VerifyLookup{Run: run, homeDir: homeDir, assets: make([]assetLookup, len(hashes))}
+	coveredIDs := map[int][]int{} // asset id -> indexes in l.assets (a hash may be sent twice)
+	for i, h := range hashes {
+		a := &l.assets[i]
+		a.hash = h
+		var assetID, status int
+		var uploadTime interface{}
+		err := tx.QueryRowContext(ctx, "select id, status, upload_time from asset where user_id = ? and hash = ?",
+			userID, strings.ToLower(h)).Scan(&assetID, &status, &uploadTime)
+		if common.IsErrNoRows(err) {
+			continue
 		}
-		return results, run, nil
+		if err != nil {
+			return nil, err
+		}
+		a.found = true
+		if types.IsAssetStatus(status, types.AssetStatusScanLink) {
+			a.linked = true
+			continue
+		}
+		a.masterFile, _, _, a.extID, err = asset.GetAssetPath(ctx, tx, userID, assetID, 0)
+		if err != nil {
+			return nil, err
+		}
+		a.uploadTime = dbTimeUnix(uploadTime)
+		if run != nil && int64(assetID) <= run.MaxAssetID {
+			a.covered = true
+			coveredIDs[assetID] = append(coveredIDs[assetID], i)
+		}
 	}
 
-	results := make([]AssetVerify, 0, len(hashes))
-	for _, h := range hashes {
-		v, err := verifyAsset(ctx, tx, userID, strings.ToLower(h), run)
-		if err != nil {
-			return nil, nil, err
+	if len(coveredIDs) > 0 {
+		ids := make([]interface{}, 0, len(coveredIDs)+1)
+		ids = append(ids, run.ID)
+		for id := range coveredIDs {
+			ids = append(ids, id)
 		}
-		v.Hash = h
-		results = append(results, v)
+		rows, err := tx.QueryContext(ctx, "select asset_id from ccheck_bad where run_id = ? and asset_id in (?"+
+			strings.Repeat(",?", len(coveredIDs)-1)+")", ids...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			for _, i := range coveredIDs[id] {
+				l.assets[i].bad = true
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 	}
-	return results, run, nil
+	return l, nil
 }
 
-func verifyAsset(ctx context.Context, tx *sql.Tx, userID int, hash string, run *CheckRun) (AssetVerify, error) {
-	var assetID, status int
-	var uploadTime interface{}
-	err := tx.QueryRowContext(ctx, "select id, status, upload_time from asset where user_id = ? and hash = ?",
-		userID, hash).Scan(&assetID, &status, &uploadTime)
-	if common.IsErrNoRows(err) {
-		return AssetVerify{Status: VerifyNotFound}, nil
+// Check answers each looked-up hash, in request order. Call it after the lookup's transaction
+// is closed: it stats files.
+func (l *VerifyLookup) Check() []AssetVerify {
+	results := make([]AssetVerify, len(l.assets))
+	master, _ := common.GetUserPhotoDir(l.homeDir)
+	if ok, err := common.IsFileExist(master); err != nil || !ok {
+		// disk not mounted or library moved: nothing can be confirmed, but nothing is known lost
+		for i, a := range l.assets {
+			results[i] = AssetVerify{Hash: a.hash, Status: VerifyUnavailable}
+		}
+		return results
 	}
-	if err != nil {
-		return AssetVerify{}, err
+	for i, a := range l.assets {
+		results[i] = l.check(a)
+		results[i].Hash = a.hash
 	}
-	if types.IsAssetStatus(status, types.AssetStatusScanLink) {
-		return AssetVerify{Status: VerifyLinked}, nil
-	}
+	return results
+}
 
-	masterFile, _, _, extID, err := asset.GetAssetPath(ctx, tx, userID, assetID, 0)
-	if err != nil {
-		return AssetVerify{}, err
+func (l *VerifyLookup) check(a assetLookup) AssetVerify {
+	switch {
+	case !a.found:
+		return AssetVerify{Status: VerifyNotFound}
+	case a.linked:
+		return AssetVerify{Status: VerifyLinked}
+	case !nonEmptyFile(a.masterFile):
+		return AssetVerify{Status: VerifyFileMissing}
 	}
-	if !nonEmptyFile(masterFile) {
-		return AssetVerify{Status: VerifyFileMissing}, nil
-	}
-	if extID == ext.ZIP {
-		prefix := strings.TrimSuffix(masterFile, "."+ext.ZIPString)
+	if a.extID == ext.ZIP {
+		prefix := strings.TrimSuffix(a.masterFile, "."+ext.ZIPString)
 		if !nonEmptyFile(ext.MkLivePhotoImageNameJPG(prefix)) && !nonEmptyFile(ext.MkLivePhotoImageNameHEIC(prefix)) {
-			return AssetVerify{Status: VerifyFileMissing}, nil
+			return AssetVerify{Status: VerifyFileMissing}
 		}
 	}
-
-	if run != nil && int64(assetID) <= run.MaxAssetID {
-		var n int
-		if err := tx.QueryRowContext(ctx, "select count(*) from ccheck_bad where run_id = ? and asset_id = ?",
-			run.ID, assetID).Scan(&n); err != nil {
-			return AssetVerify{}, err
+	if a.covered {
+		if a.bad {
+			return AssetVerify{Status: VerifyBad}
 		}
-		if n > 0 {
-			return AssetVerify{Status: VerifyBad}, nil
-		}
-		return AssetVerify{Status: VerifyOK, Evidence: EvidenceCCheck, CheckedAt: run.StartTime}, nil
+		return AssetVerify{Status: VerifyOK, Evidence: EvidenceCCheck, CheckedAt: l.Run.StartTime}
 	}
-	return AssetVerify{Status: VerifyOK, Evidence: EvidenceUpload, CheckedAt: dbTimeUnix(uploadTime)}, nil
+	return AssetVerify{Status: VerifyOK, Evidence: EvidenceUpload, CheckedAt: a.uploadTime}
 }
 
 func nonEmptyFile(p string) bool {

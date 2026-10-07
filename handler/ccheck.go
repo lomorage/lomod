@@ -17,6 +17,9 @@ import (
 // maxVerifyHashes bounds one /assets/verify request; each hash costs a DB lookup and a stat.
 const maxVerifyHashes = 500
 
+// maxVerifyBodyBytes comfortably fits maxVerifyHashes hex SHA-1s.
+const maxVerifyBodyBytes = 64 << 10
+
 func (h *Handler) startCCheck(w http.ResponseWriter, r *http.Request) {
 	h.ccheckCh <- struct{}{}
 }
@@ -85,7 +88,7 @@ func (h *Handler) verifyAssets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := verifyAssetsRequest{}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxVerifyBodyBytes)).Decode(&req); err != nil {
 		common.WriteError(w, common.ErrBadRequest)
 		return
 	}
@@ -107,19 +110,20 @@ func (h *Handler) verifyAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DB reads in the transaction; file checks after it, so the single SQLite connection isn't
+	// held while a sleeping disk spins up.
+	var lookup *check.VerifyLookup
 	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
-		assets, run, err := check.VerifyAssets(ctx, tx, wl.Userid, req.Hashes)
-		if err != nil {
-			return err
-		}
-		resp.Assets = assets
-		if run != nil {
-			resp.LastCheck = &verifyAssetsRun{Start: run.StartTime, End: run.EndTime}
-		}
-		return nil
+		var err error
+		lookup, err = check.LookupAssets(ctx, tx, wl.Userid, req.Hashes)
+		return err
 	}); err != nil {
 		common.WriteError(w, err)
 		return
+	}
+	resp.Assets = lookup.Check()
+	if lookup.Run != nil {
+		resp.LastCheck = &verifyAssetsRun{Start: lookup.Run.StartTime, End: lookup.Run.EndTime}
 	}
 	common.WriteBody(w, resp)
 }
