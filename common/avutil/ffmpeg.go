@@ -78,3 +78,12 @@ func (f *ffmpeg) XcodeVideoToImage(assetpath, previewpath string, width, height 
 		return cmd.ExecLowPriority(f.transcodeApp, cmds...)
 	})
 }
+
+// DecodeImage decodes the primary image of assetpath into outpath. ffmpeg (7.1+) reads HEIF
+// tile grids and applies irot/imir, so the result needs no further orientation handling.
+func (f *ffmpeg) DecodeImage(assetpath, outpath string) error {
+	if f.transcodeApp == "" {
+		return fmt.Errorf("no ffmpeg to decode %s", assetpath)
+	}
+	return cmd.ExecLowPriority(f.transcodeApp, "-v", "error", "-i", assetpath, "-frames:v", "1", "-y", outpath)
+}
