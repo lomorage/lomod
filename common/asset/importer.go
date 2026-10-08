@@ -178,7 +178,8 @@ func CreateAsset(ctx context.Context, tx *sql.Tx, userid, deviceid, extid int, s
 // SaveLivephoto copy data from reader to temp dir, then compare sha with specified data
 func SaveLivephoto(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha hash.Hash,
 	folderPerm, filePerm os.FileMode) (string, string, error) {
-	cacheFilename, err := save(basedir, savedAsset, r, sha, folderPerm, filePerm, func(dst *os.File) (string, error) {
+	// sha isn't fed while a zip arrives, so no resume state (trackState false)
+	cacheFilename, err := save(basedir, savedAsset, r, sha, folderPerm, filePerm, false, func(dst *os.File) (string, error) {
 		_, err := io.Copy(dst, r)
 		return savedAsset.FinalSHA, err
 	})
@@ -227,9 +228,8 @@ func SaveLivephoto(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCl
 // SaveAsset copy data from reader to specified location, then compare sha with specified data
 func SaveAsset(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha hash.Hash,
 	folderPerm, filePerm os.FileMode) (string, error) {
-	return save(basedir, savedAsset, r, sha, folderPerm, filePerm, func(dst *os.File) (string, error) {
-		mw := io.MultiWriter(sha, dst)
-		size, err := io.Copy(mw, r)
+	return save(basedir, savedAsset, r, sha, folderPerm, filePerm, true, func(dst *os.File) (string, error) {
+		size, err := io.Copy(hashingWriter{w: dst, h: sha}, r)
 		if err != nil {
 			return "", err
 		}
@@ -243,8 +243,24 @@ func SaveAsset(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser
 	})
 }
 
+// hashingWriter hashes exactly the bytes written to w, so the hash always matches the file --
+// unlike io.MultiWriter(h, w), which has already hashed what a failed or short write dropped.
+type hashingWriter struct {
+	w io.Writer
+	h hash.Hash
+}
+
+func (hw hashingWriter) Write(p []byte) (int, error) {
+	n, err := hw.w.Write(p)
+	hw.h.Write(p[:n])
+	return n, err
+}
+
+// save writes r to the user's temp file for savedAsset, resuming it at CurrSize when set.
+// With trackState, sha's state is kept next to the temp file whenever the upload ends
+// incomplete (see resume_state.go), so the next PATCH or HEAD needn't re-read the file.
 func save(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha hash.Hash,
-	folderPerm, filePerm os.FileMode, calculateFinalSHA func(dst *os.File) (string,
+	folderPerm, filePerm os.FileMode, trackState bool, calculateFinalSHA func(dst *os.File) (string,
 		error)) (filename string, err error) {
 	defer func() {
 		// set sha to empty for GC
@@ -261,6 +277,8 @@ func save(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha
 			return "", err
 		}
 		flag = flag | os.O_CREATE | os.O_TRUNC
+		// even without trackState: HEAD may have saved one for this file
+		removeResumeState(cachedFilename)
 	} else {
 		fi, err := os.Stat(cachedFilename)
 		if err != nil {
@@ -276,6 +294,38 @@ func save(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha
 	if err != nil {
 		return "", err
 	}
+
+	// Runs after the sync and close below (defers run last-registered first).
+	var (
+		wrote, complete bool
+		endOffset       int64
+	)
+	defer func() {
+		if complete {
+			// even without trackState: HEAD may have saved one for this file
+			removeResumeState(cachedFilename)
+			return
+		}
+		if trackState {
+			if !wrote {
+				return // failed before writing anything; the existing state still holds
+			}
+			// sha covers exactly the endOffset bytes now in the file
+			fi, serr := os.Stat(cachedFilename)
+			if serr != nil || fi.Size() != endOffset || endOffset == 0 {
+				removeResumeState(cachedFilename)
+				return
+			}
+			if serr := saveResumeState(cachedFilename, endOffset, sha); serr != nil {
+				logrus.Warnf("save resume state of %s: %v", cachedFilename, serr)
+				removeResumeState(cachedFilename)
+			}
+		} else if wrote {
+			// the file changed under a state HEAD may have saved; it no longer applies
+			removeResumeState(cachedFilename)
+		}
+	}()
+
 	defer func() {
 		// execute fsync only if no error before
 		ferr := f.Sync()
@@ -292,7 +342,19 @@ func save(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha
 		}
 	}()
 
-	if savedAsset.CurrSize != 0 {
+	resumed := false
+	if savedAsset.CurrSize != 0 && trackState {
+		if st := loadResumeState(cachedFilename, savedAsset.CurrSize); st != nil &&
+			fmt.Sprintf("%x", st.Sum(nil)) == savedAsset.CurrSHA {
+			if rerr := restoreHash(sha, st); rerr == nil {
+				if _, err = f.Seek(0, io.SeekEnd); err != nil {
+					return "", err
+				}
+				resumed = true
+			}
+		}
+	}
+	if savedAsset.CurrSize != 0 && !resumed {
 		// read until end of current file, so that
 		// 1. compare current sha
 		// 2. resume the file
@@ -311,7 +373,11 @@ func save(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha
 	logrus.Infof("start writing file to temp file: %s", cachedFilename)
 
 	var hash string
+	wrote = true
 	hash, err = calculateFinalSHA(f)
+	if pos, serr := f.Seek(0, io.SeekCurrent); serr == nil {
+		endOffset = pos
+	}
 	if err != nil {
 		return "", err
 	}
@@ -321,5 +387,6 @@ func save(basedir string, savedAsset *types.LastSavedAsset, r io.ReadCloser, sha
 		return "", common.ErrAssetDiffHash
 	}
 
+	complete = true
 	return f.Name(), nil
 }

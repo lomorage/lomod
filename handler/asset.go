@@ -604,7 +604,10 @@ func (h *Handler) getAssetHashInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var lsa *types.LastSavedAsset
+	var (
+		lsa     *types.LastSavedAsset
+		homeDir string
+	)
 	id := mux.Vars(r)["sha1"]
 	err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
 		_, _, err := asset.GetAssetIDByHash(ctx, tx, wl.Userid, id)
@@ -613,16 +616,14 @@ func (h *Handler) getAssetHashInfo(w http.ResponseWriter, r *http.Request) {
 		} else if err != common.ErrAssetNotExistForUser {
 			return err
 		}
-
-		// check uploaded partial content
-		homeDir, err := user.GetHomedir(ctx, tx, wl.Userid)
-		if err != nil {
-			return err
-		}
-
-		lsa, err = asset.GetPartialUploadContent(homeDir, id)
+		homeDir, err = user.GetHomedir(ctx, tx, wl.Userid)
 		return err
 	})
+	if err == nil && homeDir != "" {
+		// check uploaded partial content -- outside the transaction: without a saved resume
+		// state this hashes the partial file, and lomod has a single DB connection
+		lsa, err = asset.GetPartialUploadContent(homeDir, id)
+	}
 	if err != nil {
 		logrus.Warnf("check %d's hash %s: %v", wl.Userid, id, err)
 		w.WriteHeader(http.StatusInternalServerError)
