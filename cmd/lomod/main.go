@@ -271,12 +271,7 @@ func initConfig(ctx *cli.Context) *handler.Config {
 		WebFootHtml:        "",
 	}
 
-	// Windows has no "/media"-style USB auto-mount staging directory (the --mount-dir default),
-	// so /mount would otherwise always report ErrDeviceNotMount there. Treat --base itself as
-	// the mount pool instead, unless the user explicitly passed --mount-dir.
-	if runtime.GOOS == "windows" && !ctx.GlobalIsSet("mount-dir") {
-		config.MountDir = config.BaseDir
-	}
+	config.MountDir = resolveMountDir(runtime.GOOS, config.BaseDir, config.MountDir, ctx.GlobalIsSet("mount-dir"))
 
 	// environment variable will override specified value, this is to give flexibility to define dirs
 	if os.Getenv("LOMOD_BASE_DIR") != "" {
@@ -424,4 +419,20 @@ func bootService(ctx *cli.Context) error {
 			}()
 	*/
 	return http.ListenAndServe(fmt.Sprintf(":%d", config.ListenPort), h.Router)
+}
+
+// resolveMountDir returns the directory lomod scans for storage locations (GET /mount).
+// Windows and macOS have no "/media"-style USB auto-mount staging directory (the --mount-dir
+// default), so /mount would otherwise always report ErrDeviceNotMount there and signup shows
+// "No storage locations found". On those platforms treat --base itself as the mount pool,
+// unless the user explicitly passed --mount-dir.
+func resolveMountDir(goos, baseDir, mountDir string, explicitlySet bool) string {
+	if explicitlySet {
+		return mountDir
+	}
+	switch goos {
+	case "windows", "darwin":
+		return baseDir
+	}
+	return mountDir
 }
