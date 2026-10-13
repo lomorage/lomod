@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -381,5 +382,38 @@ func TestWriteAtomicallyLeavesDestinationOnFailure(t *testing.T) {
 	}
 	if string(got) != "new" {
 		t.Fatalf("destination = %q, want the completed write", got)
+	}
+	assertPublishedMode(t, dst)
+
+	// a saver that removes the temp and recreates it 0600 must not publish that mode
+	if err := WriteAtomically(dst, func(tmp string) error {
+		if err := os.Remove(tmp); err != nil {
+			return err
+		}
+		return ioutil.WriteFile(tmp, []byte("replaced"), 0600)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ioutil.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "replaced" {
+		t.Fatalf("destination = %q, want the replaced write", got)
+	}
+	assertPublishedMode(t, dst)
+}
+
+func assertPublishedMode(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0644 {
+		t.Fatalf("mode = %o, want 0644", fi.Mode().Perm())
 	}
 }

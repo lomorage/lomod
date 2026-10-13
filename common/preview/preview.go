@@ -532,6 +532,13 @@ func WriteAtomically(dst string, write func(tmp string) error) error {
 		return err
 	}
 	tmp := f.Name()
+	// TempFile is 0600 and rename keeps that mode, so a published preview would be
+	// unreadable to other users of a shared Unix photo directory.
+	if err := f.Chmod(common.DefaultFilePermission); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
 	if err := f.Close(); err != nil {
 		os.Remove(tmp)
 		return err
@@ -542,6 +549,11 @@ func WriteAtomically(dst string, write func(tmp string) error) error {
 		}
 	}()
 	if err := write(tmp); err != nil {
+		return err
+	}
+	// A saver that replaces the inode applies its own mode. Set it again on the
+	// file that rename publishes.
+	if err := os.Chmod(tmp, common.DefaultFilePermission); err != nil {
 		return err
 	}
 	return os.Rename(tmp, dst)
