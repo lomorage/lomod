@@ -271,20 +271,13 @@ func initConfig(ctx *cli.Context) *handler.Config {
 		WebFootHtml:        "",
 	}
 
-	// Windows has no "/media"-style USB auto-mount staging directory (the --mount-dir default),
-	// so /mount would otherwise always report ErrDeviceNotMount there. Treat --base itself as
-	// the mount pool instead, unless the user explicitly passed --mount-dir.
-	if runtime.GOOS == "windows" && !ctx.GlobalIsSet("mount-dir") {
-		config.MountDir = config.BaseDir
-	}
+	// Apply directory environment overrides before resolving the platform default.
+	config.BaseDir, config.MountDir = resolveStorageDirs(
+		runtime.GOOS, config.BaseDir, config.MountDir, ctx.GlobalIsSet("mount-dir"),
+		os.Getenv("LOMOD_BASE_DIR"), os.Getenv("LOMOD_MOUNT_DIR"),
+	)
 
-	// environment variable will override specified value, this is to give flexibility to define dirs
-	if os.Getenv("LOMOD_BASE_DIR") != "" {
-		config.BaseDir = os.Getenv("LOMOD_BASE_DIR")
-	}
-	if os.Getenv("LOMOD_MOUNT_DIR") != "" {
-		config.MountDir = os.Getenv("LOMOD_MOUNT_DIR")
-	}
+	// Environment variables override the corresponding command-line values.
 	if os.Getenv("LOMOD_PORT_HTTP") != "" {
 		p, err := strconv.Atoi(os.Getenv("LOMOD_PORT_HTTP"))
 		if err != nil {
@@ -424,4 +417,32 @@ func bootService(ctx *cli.Context) error {
 			}()
 	*/
 	return http.ListenAndServe(fmt.Sprintf(":%d", config.ListenPort), h.Router)
+}
+
+// resolveMountDir returns the directory lomod scans for storage locations (GET /mount).
+// Windows and macOS have no "/media"-style USB auto-mount staging directory (the --mount-dir
+// default), so /mount would otherwise always report ErrDeviceNotMount there and signup shows
+// "No storage locations found". On those platforms treat --base itself as the mount pool,
+// unless the user explicitly passed --mount-dir.
+func resolveMountDir(goos, baseDir, mountDir string, explicitlySet bool) string {
+	if explicitlySet {
+		return mountDir
+	}
+	switch goos {
+	case "windows", "darwin":
+		return baseDir
+	}
+	return mountDir
+}
+
+// resolveStorageDirs preserves environment overrides and makes the default mount
+// directory follow the final base directory on Windows and macOS.
+func resolveStorageDirs(goos, baseDir, mountDir string, explicitlySet bool, baseEnv, mountEnv string) (string, string) {
+	if baseEnv != "" {
+		baseDir = baseEnv
+	}
+	if mountEnv != "" {
+		return baseDir, mountEnv
+	}
+	return baseDir, resolveMountDir(goos, baseDir, mountDir, explicitlySet)
 }
