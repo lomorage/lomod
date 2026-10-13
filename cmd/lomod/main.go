@@ -271,15 +271,13 @@ func initConfig(ctx *cli.Context) *handler.Config {
 		WebFootHtml:        "",
 	}
 
-	config.MountDir = resolveMountDir(runtime.GOOS, config.BaseDir, config.MountDir, ctx.GlobalIsSet("mount-dir"))
+	// Apply directory environment overrides before resolving the platform default.
+	config.BaseDir, config.MountDir = resolveStorageDirs(
+		runtime.GOOS, config.BaseDir, config.MountDir, ctx.GlobalIsSet("mount-dir"),
+		os.Getenv("LOMOD_BASE_DIR"), os.Getenv("LOMOD_MOUNT_DIR"),
+	)
 
-	// environment variable will override specified value, this is to give flexibility to define dirs
-	if os.Getenv("LOMOD_BASE_DIR") != "" {
-		config.BaseDir = os.Getenv("LOMOD_BASE_DIR")
-	}
-	if os.Getenv("LOMOD_MOUNT_DIR") != "" {
-		config.MountDir = os.Getenv("LOMOD_MOUNT_DIR")
-	}
+	// Environment variables override the corresponding command-line values.
 	if os.Getenv("LOMOD_PORT_HTTP") != "" {
 		p, err := strconv.Atoi(os.Getenv("LOMOD_PORT_HTTP"))
 		if err != nil {
@@ -435,4 +433,16 @@ func resolveMountDir(goos, baseDir, mountDir string, explicitlySet bool) string 
 		return baseDir
 	}
 	return mountDir
+}
+
+// resolveStorageDirs preserves environment overrides and makes the default mount
+// directory follow the final base directory on Windows and macOS.
+func resolveStorageDirs(goos, baseDir, mountDir string, explicitlySet bool, baseEnv, mountEnv string) (string, string) {
+	if baseEnv != "" {
+		baseDir = baseEnv
+	}
+	if mountEnv != "" {
+		return baseDir, mountEnv
+	}
+	return baseDir, resolveMountDir(goos, baseDir, mountDir, explicitlySet)
 }
