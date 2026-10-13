@@ -55,4 +55,5 @@ type PreviewRunner interface {
 		tags *exif.Tags, previewImgDims, previewVideoDims []Dimension) []PreviewRequest
 	Generate(assetPath, previewDir, previewPrefix, extension string, blocking, isWebp bool)
 	GeneratePreviewByPath(ctx context.Context, folderPerm os.FileMode, req PreviewRequest) (string, error)
+	DecodeImage(assetpath, outpath string) error
 }

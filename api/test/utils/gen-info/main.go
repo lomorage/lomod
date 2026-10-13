@@ -149,7 +149,7 @@ func xcodeImage(assetPath string) (atlomod.XcodeInfo, error) {
 	base = strings.TrimSuffix(base, filepath.Ext(base))
 	previewFile := filepath.Join(tmpDir, base+".jpg")
 	log.Printf("transcode image %s to %s", assetPath, previewFile)
-	err := asset.XcodeImage(context.Background(), assetPath, previewFile, 0755)
+	err := asset.XcodeImage(context.Background(), assetPath, previewFile, 0755, nil)
 	if err != nil {
 		return pinfo, err
 	}
@@ -161,7 +161,7 @@ func xcodeImage(assetPath string) (atlomod.XcodeInfo, error) {
 	// webp preview
 	previewFile = filepath.Join(tmpDir, base+".webp")
 	log.Printf("transcode image %s to %s", assetPath, previewFile)
-	err = asset.XcodeImage(context.Background(), assetPath, previewFile, 0755)
+	err = asset.XcodeImage(context.Background(), assetPath, previewFile, 0755, nil)
 	if err != nil {
 		return pinfo, err
 	}
