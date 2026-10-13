@@ -91,6 +91,13 @@ func newApp() *cli.App {
 		},
 
 		cli.StringFlag{
+			Name: "download-prefix",
+			Usage: "prefix prepended to the release binary URL from the manifest before downloading, " +
+				"e.g. \"https://gfw.lomorage.com/\" to fetch GitHub release assets through lomorage's " +
+				"download proxy (China installs). The manifest itself is still read from --url, and the " +
+				"download is still checked against the manifest's SHA256",
+		},
+		cli.StringFlag{
 			Name: "platform-key, k",
 			Usage: "top-level key to read from the release manifest, e.g. \"windows-cli\" -- " +
 				"defaults to runtime.GOOS (\"windows\"/\"darwin\"/...), which is LomoAgent's own " +
@@ -181,7 +188,9 @@ func bootService(ctx *cli.Context) error {
 		defer os.RemoveAll(tempRoot)
 	}
 
-	f, err := downloadReleaseBin(p.URL, p.SHA256, tempRoot)
+	binURL := withDownloadPrefix(ctx.String("download-prefix"), p.URL)
+	fmt.Printf("Downloading %s\n", binURL)
+	f, err := downloadReleaseBin(binURL, p.SHA256, tempRoot)
 	if err != nil {
 		return err
 	}
@@ -536,4 +545,20 @@ func postUpgrade(postCmd string, postCmdArg string) error {
 	//log.Printf("Running command and waiting for it to finish...")
 	err := cmd.Start()
 	return err
+}
+
+// withDownloadPrefix returns url with prefix prepended (e.g. "https://gfw.lomorage.com/" +
+// "https://github.com/..."), or url unchanged when prefix is empty. A missing trailing slash on
+// prefix is added, and an url that already carries the prefix isn't prefixed twice.
+func withDownloadPrefix(prefix, url string) string {
+	if prefix == "" {
+		return url
+	}
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	if strings.HasPrefix(url, prefix) {
+		return url
+	}
+	return prefix + url
 }

@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -442,4 +444,49 @@ func TestWithoutOnlyNewerOlderReleaseIsInstalled(t *testing.T) {
 		t.Fatalf("upgrade failed: %v", err)
 	}
 	e.assertSwapped()
+}
+
+func TestWithDownloadPrefix(t *testing.T) {
+	gh := "https://github.com/lomosw/lomosw.github.io/releases/download/x/lomorage.tar.gz"
+	cases := []struct{ prefix, url, want string }{
+		{"", gh, gh},
+		{"https://gfw.lomorage.com/", gh, "https://gfw.lomorage.com/" + gh},
+		{"https://gfw.lomorage.com", gh, "https://gfw.lomorage.com/" + gh},
+		{"https://gfw.lomorage.com/", "https://gfw.lomorage.com/" + gh, "https://gfw.lomorage.com/" + gh},
+	}
+	for _, c := range cases {
+		if got := withDownloadPrefix(c.prefix, c.url); got != c.want {
+			t.Errorf("withDownloadPrefix(%q, %q) = %q, want %q", c.prefix, c.url, got, c.want)
+		}
+	}
+}
+
+// --download-prefix must route the release binary (not the manifest) through the proxy, the way
+// gfw.lomorage.com/<github url> serves China installs, and still verify the SHA256.
+func TestUpgradeDownloadsThroughPrefix(t *testing.T) {
+	e := newEnv(t)
+	var proxied []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target := strings.TrimPrefix(r.RequestURI, "/")
+		proxied = append(proxied, target)
+		resp, err := http.Get(target)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(proxy.Close)
+
+	if err := e.run(oldVersion, "--download-prefix", proxy.URL+"/"); err != nil {
+		t.Fatalf("upgrade failed: %v", err)
+	}
+	e.assertSwapped()
+	want := e.server.URL + "/release.zip"
+	if len(proxied) != 1 || proxied[0] != want {
+		t.Errorf("proxied requests = %v, want exactly [%s]", proxied, want)
+	}
+	waitFor(t, e.postMarker)
 }
