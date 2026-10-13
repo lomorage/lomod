@@ -14,11 +14,14 @@ func umount(p string) error {
 }
 
 func listMounts(base string) (map[string]*types.MountDir, error) {
+	base = filepath.Clean(base)
 	fis, err := ioutil.ReadDir(base)
 	if err != nil {
 		return nil, err
 	}
-	mounts := map[string]*types.MountDir{}
+	mounts := map[string]*types.MountDir{
+		base: {Dir: base, Type: types.MountLocal},
+	}
 	for _, fi := range fis {
 		if !fi.IsDir() {
 			continue
