@@ -703,16 +703,12 @@ func xcodeImageOnce(src, previewFile string) error {
 	vips.RemoveImageMetadata(outImage, "iptc-data")
 	vips.RemoveImageMetadata(outImage, "icc-profile-data")
 
-	if strings.TrimPrefix(filepath.Ext(previewFile), ".") == ext.JPGString {
-		err = vips.Jpegsave(outImage, previewFile)
-	} else {
-		err = vips.Webpsave(outImage, previewFile)
-	}
-	if err != nil {
-		// a failed save can leave a partial file that the size check above would later serve
-		os.Remove(previewFile)
-	}
-	return err
+	return preview.WriteAtomically(previewFile, func(tmp string) error {
+		if strings.TrimPrefix(filepath.Ext(previewFile), ".") == ext.JPGString {
+			return vips.Jpegsave(outImage, tmp)
+		}
+		return vips.Webpsave(outImage, tmp)
+	})
 }
 
 // UpdateAssetTime update asset time and move both master and preview to corresponding location

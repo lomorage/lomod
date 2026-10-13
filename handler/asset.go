@@ -425,8 +425,6 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 			return
 		}
 	}
-	masterfile := ""
-	previewfile := ""
 	idx := types.Index
 	if r.URL.Query().Get("byhash") != "" || len(assetID) == 40 {
 		idx = types.Hash
@@ -441,23 +439,49 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 				r.URL.Query().Get(common.QueryKeyWidth), assetID)
 		}
 	}
+	var (
+		aid                                         int
+		masterPath, previewPath, assetPreviewPrefix string
+		extID                                       int
+	)
 	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
-		assetid, _, err := asset.NormalizeAssetID(ctx, tx, wl.Userid, mux.Vars(r)["assetID"], idx)
+		var err error
+		aid, _, err = asset.NormalizeAssetID(ctx, tx, wl.Userid, mux.Vars(r)["assetID"], idx)
 		if err != nil {
 			return err
 		}
-		if r.URL.Query().Get(common.QueryKeyICodec) != "" {
-			masterfile, previewfile, err = asset.GetAssetMasterPreviewPath(ctx, tx, wl.Userid, assetid,
-				uint(width), 0, &icodec, h.previewRunner, h.conf.FolderPerm)
-		} else if len(h.previewVideoDims) != 0 {
-			masterfile, previewfile, err = asset.GetAssetMasterPreviewPath(ctx, tx, wl.Userid, assetid,
-				h.previewVideoDims[0].Width, h.previewVideoDims[0].Height, nil, h.previewRunner, h.conf.FolderPerm)
-		} else {
-			masterfile, previewfile, err = asset.GetAssetMasterPreviewPath(ctx, tx, wl.Userid, assetid,
-				0, 0, nil, h.previewRunner, h.conf.FolderPerm)
+		masterPath, previewPath, assetPreviewPrefix, extID, err = asset.GetAssetPath(ctx, tx, wl.Userid, aid,
+			h.conf.FolderPerm)
+		if err != nil && common.IsErrNoRows(err) {
+			err = common.ErrNotExistAsset
 		}
 		return err
 	}); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	// Transcode outside the transaction. lomod has one SQLite connection
+	// (handler/dbtrace.go SetMaxOpenConns(1)); a full-size HEIC/JPEG decode, which
+	// may run ffmpeg, would stall every other DB request for the whole transcode.
+	// Same split as getAssetPreviewPath.
+	var (
+		masterfile, previewfile string
+		err                     error
+	)
+	switch {
+	case r.URL.Query().Get(common.QueryKeyICodec) != "":
+		masterfile, previewfile, err = asset.GenerateAssetPreview(context.Background(), masterPath, previewPath,
+			assetPreviewPrefix, aid, extID, uint(width), 0, &icodec, h.previewRunner, h.conf.FolderPerm)
+	case len(h.previewVideoDims) != 0:
+		masterfile, previewfile, err = asset.GenerateAssetPreview(context.Background(), masterPath, previewPath,
+			assetPreviewPrefix, aid, extID, h.previewVideoDims[0].Width, h.previewVideoDims[0].Height,
+			nil, h.previewRunner, h.conf.FolderPerm)
+	default:
+		masterfile, previewfile, err = asset.GenerateAssetPreview(context.Background(), masterPath, previewPath,
+			assetPreviewPrefix, aid, extID, 0, 0, nil, h.previewRunner, h.conf.FolderPerm)
+	}
+	if err != nil {
 		common.WriteError(w, err)
 		return
 	}

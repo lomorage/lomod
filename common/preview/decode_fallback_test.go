@@ -216,17 +216,23 @@ func TestThumbnailFallbackConcurrentSameTarget(t *testing.T) {
 }
 
 func TestHEIFSupportIsRemembered(t *testing.T) {
-	// vips fails and the fallback works: later HEIF files skip vips entirely
+	// a file vips can't read still falls back for that file, but a non-decoder
+	// error must not latch ffmpeg for every later HEIC
 	src := notAnImage(t, t.TempDir(), "a.heic")
-	r := newTestRunner(&fakeEngine{w: 64, h: 64})
+	engine := &fakeEngine{w: 64, h: 64}
+	r := newTestRunner(engine)
 	if err := r.generatePreviewWebp(src, filepath.Join(t.TempDir(), "p.webp"), 32, 0); err != nil {
 		t.Fatal(err)
 	}
-	if heifSupport.decoder != heifByFallback {
-		t.Fatalf("decoder = %v, want heifByFallback", heifSupport.decoder)
+	if len(engine.decoded) != 1 {
+		t.Fatalf("decoder calls = %v, want one fallback for this file", engine.decoded)
+	}
+	if heifSupport.decoder != heifUntried {
+		t.Fatalf("decoder = %v, want heifUntried after a file-specific vips failure", heifSupport.decoder)
 	}
 
-	// vips reads it (a JPEG named .heic): HEIF stays with vips, the decoder isn't used
+	// vips reads it (a JPEG named .heic): the decoder isn't used, and one success
+	// does not record "this build decodes HEIF"
 	jpg, err := ioutil.ReadFile(filepath.Join("..", "..", "cmd", "lomod", "test", "img", "1_2003_01_17.jpg"))
 	if err != nil {
 		t.Fatal(err)
@@ -235,13 +241,13 @@ func TestHEIFSupportIsRemembered(t *testing.T) {
 	if err := ioutil.WriteFile(src, jpg, 0644); err != nil {
 		t.Fatal(err)
 	}
-	engine := &fakeEngine{w: 64, h: 64}
+	engine = &fakeEngine{w: 64, h: 64}
 	r = newTestRunner(engine)
 	if err := r.generatePreviewWebp(src, filepath.Join(t.TempDir(), "p.webp"), 32, 0); err != nil {
 		t.Fatal(err)
 	}
-	if heifSupport.decoder != heifByVips || len(engine.decoded) != 0 {
-		t.Fatalf("decoder = %v, decode calls %v; want heifByVips and none", heifSupport.decoder, engine.decoded)
+	if heifSupport.decoder != heifUntried || len(engine.decoded) != 0 {
+		t.Fatalf("decoder = %v, decode calls %v; want heifUntried and none", heifSupport.decoder, engine.decoded)
 	}
 
 	// a decoder failure leaves it undecided (a broken file says nothing about vips)
@@ -249,5 +255,131 @@ func TestHEIFSupportIsRemembered(t *testing.T) {
 	_ = r.generatePreviewWebp(notAnImage(t, t.TempDir(), "c.heic"), filepath.Join(t.TempDir(), "p.webp"), 32, 0)
 	if heifSupport.decoder != heifUntried {
 		t.Fatalf("decoder = %v, want heifUntried", heifSupport.decoder)
+	}
+}
+
+func TestMissingDecoderLatchesFallback(t *testing.T) {
+	defer func() { heifSupport.decoder = heifUntried }()
+	heifSupport.decoder = heifUntried
+	src := filepath.Join(t.TempDir(), "a.heic")
+	dst := filepath.Join(t.TempDir(), "p.jpg")
+	vipsCalls := 0
+	err := WithDecodeFallback(src, dst,
+		func(_, out string) error { return writePPM(out, 8, 8) },
+		func(path string) error {
+			if path == src {
+				vipsCalls++
+				return errors.New("heif: Unsupported feature: Unsupported codec (4.3000)")
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vipsCalls != 1 || heifSupport.decoder != heifByFallback {
+		t.Fatalf("vips calls %d, decoder %v; want 1 and heifByFallback", vipsCalls, heifSupport.decoder)
+	}
+
+	err = WithDecodeFallback(src, filepath.Join(t.TempDir(), "q.jpg"),
+		func(_, out string) error { return writePPM(out, 8, 8) },
+		func(path string) error {
+			if path == src {
+				t.Fatal("vips attempt after a missing-decoder latch")
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFailedHEIFLoadsStaySerialized(t *testing.T) {
+	defer func() { heifSupport.decoder = heifUntried }()
+	heifSupport.decoder = heifUntried
+	src := filepath.Join(t.TempDir(), "a.heic")
+	if err := WithDecodeFallback(src, filepath.Join(t.TempDir(), "ok.jpg"),
+		func(_, _ string) error { t.Fatal("decoder used for a vips success"); return nil },
+		func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if heifSupport.decoder != heifUntried {
+		t.Fatalf("decoder = %v after a vips success, want heifUntried", heifSupport.decoder)
+	}
+
+	var mu sync.Mutex
+	current, max := 0, 0
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	outDir := t.TempDir()
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			err := WithDecodeFallback(src, filepath.Join(outDir, "p.jpg"),
+				func(_, out string) error { return writePPM(out, 4, 4) },
+				func(path string) error {
+					if path != src {
+						return nil
+					}
+					mu.Lock()
+					current++
+					if current > max {
+						max = current
+					}
+					mu.Unlock()
+					time.Sleep(40 * time.Millisecond)
+					mu.Lock()
+					current--
+					mu.Unlock()
+					return errors.New("vips: not a known file format")
+				})
+			if err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if max != 1 {
+		t.Fatalf("concurrent vips attempts = %d, want 1", max)
+	}
+}
+
+func TestWriteAtomicallyLeavesDestinationOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "p.jpg")
+	if err := ioutil.WriteFile(dst, []byte("good"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteAtomically(dst, func(string) error {
+		return errors.New("sharing violation")
+	})
+	if err == nil {
+		t.Fatal("expected write to fail")
+	}
+	got, err := ioutil.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "good" {
+		t.Fatalf("destination = %q, want the previous contents", got)
+	}
+	entries, _ := ioutil.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Fatalf("temp file left behind: %v", entries)
+	}
+
+	if err := WriteAtomically(dst, func(tmp string) error {
+		return ioutil.WriteFile(tmp, []byte("new"), 0644)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ioutil.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new" {
+		t.Fatalf("destination = %q, want the completed write", got)
 	}
 }

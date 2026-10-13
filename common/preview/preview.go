@@ -497,16 +497,54 @@ type heifDecoder int
 
 const (
 	heifUntried heifDecoder = iota
-	heifByVips
 	heifByFallback
 )
 
-// heifSupport remembers whether this libvips build decodes HEIF. Until the first HEIF file
-// settles it, vips attempts are serialized: concurrent failed loads of one file leak its handle
-// in libvips on Windows, which then can't be moved or deleted until lomod restarts.
+// heifSupport latches heifByFallback only after libvips reports a missing HEIF decoder
+// and ffmpeg then decodes a file. A file vips can read does not prove the next one will
+// (HEVC on a Windows build), and one ffmpeg success on some other vips error does not
+// prove this build lacks a decoder. Until that latch, vips attempts stay serialized:
+// concurrent failed loads leak the file handle in libvips on Windows until lomod restarts.
 var heifSupport struct {
 	sync.Mutex
 	decoder heifDecoder
+}
+
+// vipsMissingHEIFDecoder matches the libheif errors a build without a decoder produces
+// ("Unsupported codec (4.3000)", "No decoding plugin installed"). Other vips failures
+// are file-specific and must not flip the process onto ffmpeg permanently.
+func vipsMissingHEIFDecoder(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unsupported codec") ||
+		strings.Contains(msg, "no decoding plugin installed")
+}
+
+// WriteAtomically runs write against a unique temp file next to dst, then renames it
+// into place. On failure only the temp is removed: dst may be a preview a concurrent
+// background or on-demand request just finished writing.
+func WriteAtomically(dst string, write func(tmp string) error) error {
+	dir, file := filepath.Split(dst)
+	f, err := ioutil.TempFile(dir, "."+file+".*.part")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	defer func() {
+		if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+			logrus.Warnf("remove preview temp file %s: %v", tmp, err)
+		}
+	}()
+	if err := write(tmp); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
 }
 
 // WithDecodeFallback runs attempt on src, and for HEIF files vips can't decode (see
@@ -518,41 +556,46 @@ func WithDecodeFallback(src, dst string, decode func(src, dst string) error, att
 		return attempt(src)
 	}
 
-	heifSupport.Lock()
-	decoder := heifSupport.decoder
-	untried := decoder == heifUntried
-	if untried {
-		defer heifSupport.Unlock()
-	} else {
+	err, skipVips := vipsHEIF(src, attempt)
+	if skipVips {
+		return decodeThenAttempt(src, dst, decode, attempt, errors.New("libvips can't decode HEIF here"))
+	}
+	if err == nil {
+		return nil
+	}
+	logrus.Infof("vips can't read %s (%s), decoding it with ffmpeg", src, FirstLine(err))
+	if ferr := decodeThenAttempt(src, dst, decode, attempt, err); ferr != nil {
+		return ferr
+	}
+	if vipsMissingHEIFDecoder(err) {
+		heifSupport.Lock()
+		if heifSupport.decoder != heifByFallback {
+			heifSupport.decoder = heifByFallback
+			logrus.Warnf("libvips can't decode HEIF (%s), using ffmpeg for HEIC/HEIF from now on", src)
+		}
 		heifSupport.Unlock()
 	}
+	return nil
+}
 
-	var err error
-	if decoder == heifByFallback {
-		err = errors.New("libvips can't decode HEIF here")
-	} else {
-		if err = attempt(src); err == nil {
-			if untried {
-				heifSupport.decoder = heifByVips
-			}
-			return nil
-		}
-		logrus.Infof("vips can't read %s (%s), decoding it with ffmpeg", src, FirstLine(err))
+// vipsHEIF runs attempt while holding heifSupport, unless ffmpeg fallback is already
+// latched. The bool is true when attempt was not called.
+func vipsHEIF(src string, attempt func(path string) error) (error, bool) {
+	heifSupport.Lock()
+	defer heifSupport.Unlock()
+	if heifSupport.decoder == heifByFallback {
+		return nil, true
 	}
+	return attempt(src), false
+}
 
+func decodeThenAttempt(src, dst string, decode func(src, dst string) error, attempt func(path string) error, vipsErr error) error {
 	decoded, cleanup, derr := DecodeToTemp(decode, src, dst)
 	if derr != nil {
-		return errors.Wrapf(err, "fallback: %v", derr)
+		return errors.Wrapf(vipsErr, "fallback: %v", derr)
 	}
 	defer cleanup()
-	if err := attempt(decoded); err != nil {
-		return err
-	}
-	if untried {
-		heifSupport.decoder = heifByFallback
-		logrus.Warnf("libvips can't decode HEIF (%s), using ffmpeg for HEIC/HEIF from now on", src)
-	}
-	return nil
+	return attempt(decoded)
 }
 
 // DecodeImage decodes a still image vips can't read into outpath -- see NeedsDecodeFallback.
@@ -596,20 +639,21 @@ func thumbnailTo(src, previewpath string, width, height uint, format string) err
 	vips.RemoveImageMetadata(outImage, "iptc-data")
 	vips.RemoveImageMetadata(outImage, "icc-profile-data")
 
-	switch format {
-	case ext.JPGString:
-		err = vips.Jpegsave(outImage, previewpath)
-	case ext.PNGString:
-		err = vips.Pngsave(outImage, previewpath)
-	default:
-		err = vips.Webpsave(outImage, previewpath)
-	}
-	if err != nil {
-		// a failed save can leave a partial file that checkFile would later serve as cached
-		os.Remove(previewpath)
-		return errors.Wrapf(err, "while saving %s preview", format)
-	}
-	return nil
+	return WriteAtomically(previewpath, func(tmp string) error {
+		var serr error
+		switch format {
+		case ext.JPGString:
+			serr = vips.Jpegsave(outImage, tmp)
+		case ext.PNGString:
+			serr = vips.Pngsave(outImage, tmp)
+		default:
+			serr = vips.Webpsave(outImage, tmp)
+		}
+		if serr != nil {
+			return errors.Wrapf(serr, "while saving %s preview", format)
+		}
+		return nil
+	})
 }
 
 // GeneratePreviewByPath generates preview for asset
