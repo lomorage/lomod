@@ -604,7 +604,8 @@ func getCachedFilename(homeDir, hash string) string {
 	return filepath.Join(common.GetUserTmpDir(homeDir), hash)
 }
 
-// GetPartialUploadContent gets the partial content information
+// GetPartialUploadContent gets the partial content information. It may hash a large file, so
+// callers must not hold a DB transaction across it.
 func GetPartialUploadContent(homeDir, hash string) (*types.LastSavedAsset, error) {
 	lsa := &types.LastSavedAsset{FinalSHA: hash}
 	cachedFilename := getCachedFilename(homeDir, hash)
@@ -618,9 +619,17 @@ func GetPartialUploadContent(homeDir, hash string) (*types.LastSavedAsset, error
 	lsa.CurrSize = fi.Size()
 
 	if lsa.CurrSize == 0 {
+		removeResumeState(cachedFilename)
 		return lsa, os.RemoveAll(cachedFilename)
 	}
 
+	if h := loadResumeState(cachedFilename, lsa.CurrSize); h != nil {
+		lsa.CurrSHA = fmt.Sprintf("%x", h.Sum(nil))
+		return lsa, nil
+	}
+
+	// no usable state (e.g. a temp file from before resume states existed): hash the file once
+	// and keep the state, so the PATCH that follows doesn't hash it again
 	f, err := os.Open(cachedFilename)
 	if err != nil {
 		return lsa, err
@@ -632,6 +641,9 @@ func GetPartialUploadContent(homeDir, hash string) (*types.LastSavedAsset, error
 		return lsa, err
 	} else if size != lsa.CurrSize {
 		return lsa, errors.Errorf("Expect to copy %d bytes, but only copy %d", lsa.CurrSize, size)
+	}
+	if err := saveResumeState(cachedFilename, lsa.CurrSize, h); err != nil {
+		logrus.Warnf("save resume state of %s: %v", cachedFilename, err)
 	}
 
 	lsa.CurrSHA = fmt.Sprintf("%x", h.Sum(nil))

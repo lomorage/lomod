@@ -623,14 +623,14 @@ func (ts *mainSuite) importAsset(c *C, p, url string) *types.Asset {
 func (ts *mainSuite) importAssetWithResult(c *C, p, url, method, expectBody string, status int,
 	headers map[string]string) []byte {
 	var a io.ReadCloser
-	if path.IsAbs(p) {
+	if filepath.IsAbs(p) {
 		var err error
 		a, err = os.Open(p)
 		c.Assert(err, IsNil)
 	} else {
 		wd, err := os.Getwd()
 		c.Assert(err, IsNil)
-		a, err = os.Open(path.Join(wd, p))
+		a, err = os.Open(filepath.Join(wd, p))
 		c.Assert(err, IsNil)
 	}
 	defer a.Close()
@@ -819,6 +819,11 @@ type resumedAsset struct {
 }
 
 func (ts *mainSuite) testAssetResumeWithInfo(c *C, ra resumedAsset) {
+	// the user's real temp dir (photodir alone is wrong on Windows, see getUserDir)
+	tmpDir := filepath.Join(ts.h.getUserDir(photodir+"/alice", "alice"), ".lomodTemp")
+	stateFile := filepath.Join(tmpDir, ra.sha+".sha1state")
+	// SetUpTest's cleanup misses that dir on Windows; start without leftovers
+	c.Assert(os.RemoveAll(tmpDir), IsNil)
 	// test 1: basic flow
 	//  1. use HEAD to query, which should return 404
 	//  2. upload partial content
@@ -832,7 +837,11 @@ func (ts *mainSuite) testAssetResumeWithInfo(c *C, ra resumedAsset) {
 		fmt.Sprintf("/asset/%s?token=%s&ext=%s&createtime=2003-11-23T12:00:00Z", ra.sha, ts.token,
 			ra.extension), http.MethodPost, ra.p1Error, ra.expectStatus, nil)
 
-	ts.validateAsset(c, fmt.Sprintf("%s/alice/.lomodTemp/%s", photodir, ra.sha), ra.p1Size)
+	ts.validateAsset(c, filepath.Join(tmpDir, ra.sha), ra.p1Size)
+	// a regular file's partial upload keeps its SHA-1 state for HEAD/PATCH; a Live Photo zip
+	// (parsed as it arrives) doesn't
+	_, err := os.Stat(stateFile)
+	c.Assert(err == nil, Equals, ra.extension != "zip", Commentf("state file %s: %v", stateFile, err))
 
 	headers := map[string]string{"If-Match": fmt.Sprintf("size=%d, sha1=%s", ra.p1Size, ra.p1SHA)}
 	ts.requestWithMethod(c, fmt.Sprintf("/asset/%s?token=%s", ra.sha, ts.token), http.MethodHead,
@@ -846,7 +855,8 @@ func (ts *mainSuite) testAssetResumeWithInfo(c *C, ra resumedAsset) {
 	c.Assert(json.NewDecoder(bytes.NewBuffer(reply)).Decode(&a), IsNil)
 
 	ts.requestWithMethod(c, fmt.Sprintf("/asset/%s?token=%s", ra.sha, ts.token), http.MethodHead, http.StatusOK, nil, nil, nil)
-	ts.validateDir(c, fmt.Sprintf("%s/alice/.lomodTemp", photodir), 0, true)
+	ts.validateDir(c, tmpDir, 0, true)
+	ts.validateDir(c, tmpDir, 0, false) // temp file and resume state are gone
 
 	time.Sleep(5 * time.Second)
 	ts.requestDelete(c, ts.token, &types.DeleteAssetItems{
@@ -860,7 +870,8 @@ func (ts *mainSuite) testAssetResumeWithInfo(c *C, ra resumedAsset) {
 			ra.extension), "POST", ra.p1Error, ra.expectStatus, nil)
 
 	ts.importAsset(c, ra.path, fmt.Sprintf("/asset/%s?token=%s&ext=%s&createtime=2003-11-23T12:00:00Z", ra.sha, ts.token, ra.extension))
-	ts.validateDir(c, fmt.Sprintf("%s/alice/.lomodTemp", photodir), 0, true)
+	ts.validateDir(c, tmpDir, 0, true)
+	ts.validateDir(c, tmpDir, 0, false) // temp file and resume state are gone
 	ts.requestWithMethod(c, fmt.Sprintf("/asset/%s?token=%s", ra.sha, ts.token), http.MethodHead, http.StatusOK, nil, nil, nil)
 	time.Sleep(5 * time.Second)
 	ts.requestDelete(c, ts.token, &types.DeleteAssetItems{
