@@ -226,10 +226,27 @@ img.lazy,
 }
 
 .lomo-lightbox-loading,
-.lomo-lightbox-error {
+.lomo-lightbox-error,
+.lomo-lightbox-note {
   color: rgba(255, 255, 255, 0.85);
   font-family: var(--font-ui);
   font-size: 13px;
+}
+
+.lomo-lightbox-video {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.lomo-lightbox-video video {
+  max-height: 82vh;
+}
+
+.lomo-lightbox-note a,
+.lomo-lightbox-video > a {
+  color: #fff;
 }
 
 .lomo-lightbox-btn {

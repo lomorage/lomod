@@ -201,6 +201,75 @@ function Open-LomodWebUI {
     Start-Process ("http://localhost:{0}" -f (Get-LomodPort))
 }
 
+function Open-LomodGallery {
+    Start-Process ("http://localhost:{0}/gallery" -f (Get-LomodPort))
+}
+
+function Get-LomodWebdavPort {
+    try {
+        $argStr = Get-LomodArgString
+        if ($argStr -match '--port-webdev\s+(\d+)') { return [int]$Matches[1] }
+    } catch { }
+    return 8004
+}
+
+# WebClient, Windows' WebDAV client, is a trigger-start service: a standard user can't start
+# it, but it starts on an event from its ETW provider -- the event File Explorer itself sends
+# when a \\host@port path is opened. Send that event.
+function Start-WebClient {
+    $svc = Get-Service WebClient -ErrorAction SilentlyContinue
+    if (-not $svc -or $svc.Status -eq 'Running') { return }
+    try {
+        Add-Type -AssemblyName System.Core
+        $provider = New-Object System.Diagnostics.Eventing.EventProvider ([guid]'22b6d684-fa63-4578-87c9-effcbe6643c7')
+        $descriptor = New-Object System.Diagnostics.Eventing.EventDescriptor (1, 0, 0, 4, 0, 0, 0)
+        $provider.WriteEvent([ref]$descriptor, [object[]]@()) | Out-Null
+        $provider.Dispose()
+    } catch { }
+}
+
+# The photos as lomod's WebDAV view shows them: <user>\Photos\<year>\<month>\<day>, plus
+# albums -- not the library folder itself, whose layout (master\, preview\, ids for names) is
+# lomod's own. Served to this computer without a password (see handler/webdav.go).
+function Open-LomodFolder {
+    $unc = "\\localhost@{0}\DavWWWRoot" -f (Get-LomodWebdavPort)
+    if (-not (Test-LomodRunning)) {
+        [System.Windows.Forms.MessageBox]::Show("Lomorage is stopped. Start it first.", "Lomorage") | Out-Null
+        return
+    }
+    if (Test-Path -LiteralPath $unc) {
+        Start-Process "explorer.exe" -ArgumentList $unc
+        return
+    }
+    # WebClient takes a few seconds to come up: wait on a timer, not in a loop, so the tray
+    # menu stays responsive. One wait at a time.
+    if ($script:folderTimer) { return }
+    Start-WebClient
+    $script:folderUnc = $unc
+    $script:folderTicks = 0
+    $script:folderTimer = New-Object System.Windows.Forms.Timer
+    $script:folderTimer.Interval = 500
+    $script:folderTimer.Add_Tick({
+        $script:folderTicks++
+        $reachable = Test-Path -LiteralPath $script:folderUnc
+        if (-not $reachable -and $script:folderTicks -lt 20) { return }
+        $script:folderTimer.Stop()
+        $script:folderTimer.Dispose()
+        $script:folderTimer = $null
+        if ($reachable) {
+            Start-Process "explorer.exe" -ArgumentList $script:folderUnc
+            return
+        }
+        $answer = [System.Windows.Forms.MessageBox]::Show(
+            "Windows couldn't open your photos as a folder (its WebClient service may be turned off).`n`nView them in the browser instead?",
+            "Lomorage",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Information)
+        if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) { Open-LomodGallery }
+    })
+    $script:folderTimer.Start()
+}
+
 function Get-LomodBaseDir {
     $argStr = Get-LomodArgString
     if ($argStr -match '--base\s+"([^"]+)"') { return $Matches[1] }
@@ -295,6 +364,10 @@ $menu.Items.Add("-") | Out-Null
 
 $openItem = $menu.Items.Add("Open Lomorage")
 $openItem.Add_Click({ Open-LomodWebUI })
+$galleryItem = $menu.Items.Add("View my photos")
+$galleryItem.Add_Click({ Open-LomodGallery })
+$folderItem = $menu.Items.Add("Open in File Explorer")
+$folderItem.Add_Click({ Open-LomodFolder })
 
 $menu.Items.Add("-") | Out-Null
 
@@ -361,6 +434,7 @@ $menu.add_Opening({
 # updater, lomorage-stop.bat). The timer ticks every second for Request-StatusRefresh and a
 # manual update check; Get-Process only runs every fifth tick otherwise.
 $script:shownRunning = $null
+$script:folderTimer = $null
 $script:statusRefreshRequested = $false
 $script:statusTicks = 0
 $statusTimer = New-Object System.Windows.Forms.Timer

@@ -71,6 +71,9 @@ type verifyAssetsRequest struct {
 type verifyAssetsResponse struct {
 	LastCheck *verifyAssetsRun    `json:"lastCheck"`
 	Assets    []check.AssetVerify `json:"assets"`
+	// Repair: uploading a file_missing asset again puts its file back (older servers refuse
+	// it as already uploaded, so clients shouldn't try there).
+	Repair bool `json:"repair"`
 }
 
 type verifyAssetsRun struct {
@@ -97,7 +100,7 @@ func (h *Handler) verifyAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := verifyAssetsResponse{Assets: []check.AssetVerify{}}
+	resp := verifyAssetsResponse{Assets: []check.AssetVerify{}, Repair: true}
 
 	h.userMountLock.Lock()
 	mi, ok := h.userMountStatus[wl.Username]

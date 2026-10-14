@@ -468,6 +468,7 @@ func NewHandler(ctx context.Context, c *Config) (*Handler, error) {
 		h.StartWebdevListener()
 	}()
 
+	common.HideInternalDirs(h.conf.BaseDir)
 	return h, nil
 }
 
@@ -547,19 +548,26 @@ func (h *Handler) StartWebdevListener() {
 	logrus.Infof("start listen webdev at :%d", h.conf.ListenPortWebdev)
 
 	h.webdavFS = newMyFS(h)
-	s := &srv{
-		lomodHandler: h,
-		h: &webdav.Handler{
-			Prefix:     "",
-			FileSystem: h.webdavFS,
-			LockSystem: webdav.NewMemLS(),
-		},
+	s := newSrv(h, h.storedPassword)
+	s.h = &webdav.Handler{
+		Prefix:     "",
+		FileSystem: h.webdavFS,
+		LockSystem: webdav.NewMemLS(),
 	}
 
 	http.HandleFunc("/", s.ServeHTTP)
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.conf.ListenPortWebdev), s); err != nil {
 		logrus.Warnf("webdev serve: %s", err)
 	}
+}
+
+// storedPassword reads a user's stored password hash for WebDAV Basic auth ("" if no such user).
+func (h *Handler) storedPassword(username string) (stored string, err error) {
+	err = dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
+		stored, err = user.StoredPassword(ctx, tx, username)
+		return err
+	})
+	return stored, err
 }
 
 // CreateRouter associates handler with URL endpoints.

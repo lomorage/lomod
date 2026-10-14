@@ -18,6 +18,7 @@ import (
 	"bitbucket.org/lomoware/lomo-backend/common"
 	"bitbucket.org/lomoware/lomo-backend/common/album"
 	"bitbucket.org/lomoware/lomo-backend/common/asset"
+	"bitbucket.org/lomoware/lomo-backend/common/check"
 	"bitbucket.org/lomoware/lomo-backend/common/dbx"
 	"bitbucket.org/lomoware/lomo-backend/common/exif"
 	"bitbucket.org/lomoware/lomo-backend/common/ext"
@@ -123,8 +124,19 @@ func (h *Handler) saveAsset(w http.ResponseWriter, r *http.Request, savedAsset *
 		common.WriteError(w, err)
 		return
 	} else if a != nil {
-		w.WriteHeader(http.StatusConflict)
-		common.WriteBody(w, a)
+		// Already uploaded. If its file has gone missing from the library, this upload puts it
+		// back; otherwise there's nothing to do.
+		repair, err := h.missingAsset(wl.Userid, savedAsset.FinalSHA)
+		if err != nil {
+			common.WriteError(w, err)
+			return
+		}
+		if repair == nil || repair.ExtID != extID {
+			w.WriteHeader(http.StatusConflict)
+			common.WriteBody(w, a)
+			return
+		}
+		h.repairAsset(w, r, savedAsset, repair, a, extension)
 		return
 	}
 
@@ -238,6 +250,65 @@ func (h *Handler) saveAsset(w http.ResponseWriter, r *http.Request, savedAsset *
 		h.previewRunner.Generate(assetPath, previewDir, "", extension, false, true)
 	} else {
 		h.previewRunner.Generate(assetPath, previewDir, "", extension, false, false)
+	}
+}
+
+// missingAsset returns the user's asset with this hash if its file is missing from the library
+// (see asset.Repair.Missing); nil if there's no such asset or its file is fine.
+func (h *Handler) missingAsset(userid int, hash string) (*asset.Repair, error) {
+	var repair *asset.Repair
+	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		repair, err = asset.LookupRepair(ctx, tx, userid, hash)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	// stat outside the transaction: lomod has a single DB connection
+	if repair == nil || !repair.Missing() {
+		return nil, nil
+	}
+	return repair, nil
+}
+
+// repairAsset puts an upload back in place of an asset's missing file. The asset keeps its id,
+// date, albums and metadata; the content is SHA-verified like any upload, so it's the same file.
+func (h *Handler) repairAsset(w http.ResponseWriter, r *http.Request, savedAsset *types.LastSavedAsset,
+	repair *asset.Repair, a *types.Asset, extension string) {
+	h.uploadCh <- struct{}{}
+	defer func() { <-h.uploadCh }()
+	h.previewRunner.Pause()
+	defer h.previewRunner.Resume()
+
+	wl := w.(*logger.ResponseLogger)
+	baseDir := ""
+	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) (err error) {
+		baseDir, err = user.GetHomedir(ctx, tx, wl.Userid)
+		return err
+	}); err != nil {
+		common.WriteError(w, err, "get home dir for repair "+savedAsset.FinalSHA)
+		return
+	}
+	filename, filenameImg, _, err := h.saveAssetValidateSHA(savedAsset,
+		r.URL.Query().Get(common.QueryKeyFileHash), baseDir, extension, r.Body)
+	if err != nil {
+		common.WriteError(w, err, "save asset for repair "+savedAsset.FinalSHA)
+		return
+	}
+	previewSrc, err := repair.Restore(filename, filenameImg, h.conf.FolderPerm)
+	if err != nil {
+		common.WriteError(w, err, "restore asset "+savedAsset.FinalSHA)
+		return
+	}
+	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
+		return check.MarkRepaired(ctx, tx, repair.AssetID, time.Now())
+	}); err != nil {
+		logrus.Warnf("clear check result of asset %d: %v", repair.AssetID, err)
+	}
+	common.WriteBody(w, a)
+
+	if !ext.IsSkipPreview(extension) {
+		h.previewRunner.Generate(previewSrc, repair.PreviewDir, "", extension, false, !h.conf.UseJpg)
 	}
 }
 
@@ -633,16 +704,25 @@ func (h *Handler) getAssetHashInfo(w http.ResponseWriter, r *http.Request) {
 		homeDir string
 	)
 	id := mux.Vars(r)["sha1"]
+	var repair *asset.Repair
 	err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
 		_, _, err := asset.GetAssetIDByHash(ctx, tx, wl.Userid, id)
 		if err == nil {
-			return nil
+			if repair, err = asset.LookupRepair(ctx, tx, wl.Userid, id); err != nil || repair == nil {
+				return err
+			}
 		} else if err != common.ErrAssetNotExistForUser {
 			return err
 		}
 		homeDir, err = user.GetHomedir(ctx, tx, wl.Userid)
 		return err
 	})
+	if err == nil && repair != nil && !repair.Missing() {
+		// uploaded and its file is there
+		return
+	}
+	// Not uploaded, or uploaded but its file is gone from the library: report it as (partly)
+	// absent so the client uploads it, and the upload puts the file back.
 	if err == nil && homeDir != "" {
 		// check uploaded partial content -- outside the transaction: without a saved resume
 		// state this hashes the partial file, and lomod has a single DB connection

@@ -13,12 +13,16 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"crypto/sha256"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/webdav"
@@ -43,6 +47,247 @@ var knownOSFiles map[string]struct{} = map[string]struct{}{
 type srv struct {
 	h *webdav.Handler
 	lomodHandler *Handler
+
+	// storedPassword reads a user's stored password hash ("" for no such user). A DB read only:
+	// the password itself is hashed after the read, outside the transaction, because lomod has a
+	// single SQLite connection and an argon2 hash takes tens of ms on a small NAS.
+	storedPassword func(username string) (string, error)
+
+	// matches checks a password against the stored hash (user.PasswordMatches; a stub in tests).
+	matches func(username, password, stored string) bool
+	// hashSlots bounds how many password hashes run at once: each takes 4 MB, and a burst of
+	// parallel requests must not exhaust a small NAS's memory. A request waits up to hashWait.
+	hashSlots chan struct{}
+	hashWait  time.Duration
+
+	// failDelay slows down each refused sign-in; after maxFailures (each within failureMemory of
+	// the last) an address is refused outright for blockFor. Set by newSrv; zero in tests.
+	failDelay     time.Duration
+	maxFailures   int
+	failureMemory time.Duration
+	blockFor      time.Duration
+
+	authMu    sync.Mutex
+	authCache map[[sha256.Size]byte]time.Time // hash(user, password, stored hash) -> valid until
+	failures  map[string]*authFailures        // by client IP
+}
+
+// authFailures is kept per client IP. Behind a reverse proxy on this computer every remote
+// client shares 127.0.0.1, so one client's failures block them all; that errs on the safe side,
+// and the forwarding headers can't be trusted to tell clients apart.
+type authFailures struct {
+	count        int
+	last         time.Time
+	blockedUntil time.Time
+}
+
+// webdavAuthTTL: WebDAV clients send credentials on every request, and checking a password
+// costs an argon2 hash, so a verified pair is remembered briefly. The cache key includes the
+// stored hash, so a password change or a deleted user takes effect at once.
+const webdavAuthTTL = 10 * time.Minute
+
+// maxTrackedAddrs bounds the failed sign-in bookkeeping.
+const maxTrackedAddrs = 1024
+
+func newSrv(h *Handler, storedPassword func(string) (string, error)) *srv {
+	return &srv{
+		lomodHandler:   h,
+		storedPassword: storedPassword,
+		matches:        user.PasswordMatches,
+		hashSlots:      make(chan struct{}, 2),
+		hashWait:       10 * time.Second,
+		failDelay:      time.Second,
+		maxFailures:    10,
+		failureMemory:  time.Hour,
+		blockFor:       5 * time.Minute,
+	}
+}
+
+// webdavUserKey carries the signed-in user of a remote request down to the file system, which
+// then only lists that user. Local requests carry none and see every user, as before.
+type webdavUserKey struct{}
+
+func webdavUser(ctx context.Context) string {
+	u, _ := ctx.Value(webdavUserKey{}).(string)
+	return u
+}
+
+func isLoopbackAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// isLocalRequest: from a program on this computer. A request a reverse proxy or tunnel on this
+// computer passes on also comes from loopback, but it carries forwarding headers and may come
+// from anywhere, so it isn't local.
+func isLocalRequest(r *http.Request) bool {
+	if !isLoopbackAddr(r.RemoteAddr) {
+		return false
+	}
+	for _, h := range []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip"} {
+		if r.Header.Get(h) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func clientIP(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
+}
+
+type authResult int
+
+const (
+	authOK authResult = iota
+	authRefused
+	authBlocked // too many refused sign-ins from this address
+	authBusy    // too many sign-ins being checked at once
+	authError
+)
+
+// authenticate checks a remote request's HTTP Basic credentials; the user name if they're right.
+func (s *srv) authenticate(r *http.Request) (string, authResult) {
+	ip := clientIP(r.RemoteAddr)
+	now := time.Now()
+	s.authMu.Lock()
+	if f := s.failures[ip]; f != nil && now.Before(f.blockedUntil) {
+		s.authMu.Unlock()
+		return "", authBlocked
+	}
+	s.authMu.Unlock()
+
+	username, password, ok := r.BasicAuth()
+	if !ok || username == "" {
+		return "", authRefused // no credentials yet: the client's first try, not a failure
+	}
+	stored, err := s.storedPassword(username)
+	if err != nil {
+		logrus.Warnf("webdav sign-in for %s: %v", username, err)
+		return "", authError
+	}
+	key := sha256.Sum256([]byte(username + "\x00" + password + "\x00" + stored))
+	if s.cached(key, now) {
+		return username, authOK
+	}
+
+	select {
+	case s.hashSlots <- struct{}{}:
+	case <-time.After(s.hashWait):
+		return "", authBusy
+	}
+	// Explorer opens several connections with the same credentials at once: whichever hashed
+	// first has cached them by now.
+	if s.cached(key, time.Now()) {
+		<-s.hashSlots
+		return username, authOK
+	}
+	ok = s.matches(username, password, stored)
+	<-s.hashSlots
+
+	if !ok {
+		s.authMu.Lock()
+		if s.failures == nil || len(s.failures) > maxTrackedAddrs {
+			s.failures = map[string]*authFailures{} // a LAN has far fewer devices; start over
+		}
+		f := s.failures[ip]
+		if f == nil {
+			f = &authFailures{}
+			s.failures[ip] = f
+		}
+		if now.Sub(f.last) > s.failureMemory {
+			f.count = 0 // old failures are forgotten
+		}
+		f.count++
+		f.last = now
+		if s.maxFailures > 0 && f.count >= s.maxFailures {
+			f.count = 0
+			f.blockedUntil = now.Add(s.blockFor)
+			logrus.Warnf("webdav: %d failed sign-ins from %s, refusing it for %s", s.maxFailures, ip, s.blockFor)
+		}
+		s.authMu.Unlock()
+		time.Sleep(s.failDelay)
+		return "", authRefused
+	}
+
+	s.authMu.Lock()
+	if s.authCache == nil {
+		s.authCache = map[[sha256.Size]byte]time.Time{}
+	}
+	for k, until := range s.authCache { // keep the cache small
+		if now.After(until) {
+			delete(s.authCache, k)
+		}
+	}
+	s.authCache[key] = now.Add(webdavAuthTTL)
+	delete(s.failures, ip)
+	s.authMu.Unlock()
+	return username, authOK
+}
+
+func (s *srv) cached(key [sha256.Size]byte, now time.Time) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	until, ok := s.authCache[key]
+	return ok && now.Before(until)
+}
+
+// remotePathAllowed: a remote user may see the root (which then lists only them) and their own
+// folder, never another user's.
+func remotePathAllowed(urlPath, username string) bool {
+	p := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+	first := strings.SplitN(p, "/", 2)[0]
+	return first == "" || first == username
+}
+
+// gate decides who may use the WebDAV view. Same computer: no sign-in (the OS user can already
+// read the library folder, and Windows Explorer won't send Basic auth over plain HTTP anyway).
+// From anywhere else: sign in with a Lomorage account and see only your own photos. It writes
+// the refusal itself and returns false; otherwise the request to serve.
+func (s *srv) gate(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	if isLocalRequest(r) {
+		return r, true
+	}
+	username, res := s.authenticate(r)
+	switch res {
+	case authBlocked:
+		w.Header().Set("Retry-After", strconv.Itoa(int(s.blockFor.Seconds())))
+		http.Error(w, "Too many failed sign-ins, try again later", http.StatusTooManyRequests)
+		return r, false
+	case authBusy:
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "Busy checking sign-ins, try again shortly", http.StatusServiceUnavailable)
+		return r, false
+	case authError:
+		http.Error(w, "Can't check the sign-in right now", http.StatusServiceUnavailable)
+		return r, false
+	case authRefused:
+		w.Header().Set("WWW-Authenticate", `Basic realm="Lomorage", charset="UTF-8"`)
+		http.Error(w, "Sign in with your Lomorage account", http.StatusUnauthorized)
+		return r, false
+	}
+	if !remotePathAllowed(r.URL.Path, username) ||
+		(r.Header.Get("Destination") != "" && !remotePathAllowed(destinationPath(r), username)) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return r, false
+	}
+	return r.WithContext(context.WithValue(r.Context(), webdavUserKey{}, username)), true
+}
+
+// destinationPath is the path part of a COPY/MOVE Destination header.
+func destinationPath(r *http.Request) string {
+	d := r.Header.Get("Destination")
+	if u, err := r.URL.Parse(d); err == nil {
+		return u.Path
+	}
+	return d
 }
 
 func mkDateName(n int) string {
@@ -68,6 +313,11 @@ func webdevLogger() func(*http.Request, error) {
 func (s *srv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	s.lomodHandler.accessLogger.LogHTTP(r, "", "", r.URL.Path, "", start, true, false)
+
+	r, ok := s.gate(w, r)
+	if !ok {
+		return
+	}
 
 	l := logger.NewResponseLogger(w)
 	s.h.ServeHTTP(l, r)
@@ -127,8 +377,10 @@ func (m *myFS) buildUserDir(name string) os.FileInfo {
 	return userDir
 }
 
-func (m *myFS) openRoot() (webdav.File, error) {
-	m.rootFile.files = []os.FileInfo{}
+// openRoot lists the users' folders; for a remote request (only != "") just that user's. A
+// filtered listing is a fresh lomoFile so concurrent requests never see each other's view.
+func (m *myFS) openRoot(only string) (webdav.File, error) {
+	files := []os.FileInfo{}
 	err := dbx.InQuery(m.h.db, func(ctx context.Context, tx *sql.Tx) error {
 		//return home dir if request is from localhost
 		users, err := user.ListUsers(ctx, tx)
@@ -140,13 +392,19 @@ func (m *myFS) openRoot() (webdav.File, error) {
 				continue
 			}
 			m.users[u.Name] = u
-			m.rootFile.files = append(m.rootFile.files, m.buildUserDir(u.Name))
+			if only == "" || u.Name == only {
+				files = append(files, m.buildUserDir(u.Name))
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	if only != "" {
+		return &lomoFile{isDir: true, name: m.rootFile.name, files: files}, nil
+	}
+	m.rootFile.files = files
 	return m.rootFile, nil
 }
 
@@ -678,11 +936,11 @@ func (m *myFS) handleOpenFileAlbum(parts []string) (webdav.File, error) {
 func (m *myFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (f webdav.File, e error) {
 	//fmt.Printf("---- OpenFile: %s, flag: %d, perm: %s\n", name, flag, perm)
 	if name == "/" {
-		return m.openRoot()
+		return m.openRoot(webdavUser(ctx))
 	}
 	parts := strings.Split(strings.TrimPrefix(strings.TrimSuffix(name, "/"), "/"), "/")
 	if len(parts) == 0 {
-		return m.openRoot()
+		return m.openRoot(webdavUser(ctx))
 	}
 	if strings.HasPrefix(parts[len(parts) - 1], ".") {
 		return nil, errors.Wrapf(common.ErrNotImplementedFormat, "OpenFiles %s", name)

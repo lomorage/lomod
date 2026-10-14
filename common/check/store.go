@@ -87,6 +87,27 @@ func FinishRun(ctx context.Context, tx *sql.Tx, runID int64, end time.Time, unve
 	return err
 }
 
+// Repaired is a ccheck_bad type that is not a problem: the asset's file was put back from a
+// verified upload after that run looked at it, so the run says nothing about the file now there.
+const Repaired = -1
+
+// MarkRepaired records that an asset's file was put back from a verified upload: what checks
+// found wrong with it no longer holds, and its evidence is now that upload, not an earlier check.
+// A run still in progress may yet report it bad (it may have looked before the repair); that
+// is conservative and the next run settles it.
+func MarkRepaired(ctx context.Context, tx *sql.Tx, assetID int, at time.Time) error {
+	if _, err := tx.ExecContext(ctx, "delete from ccheck_bad where asset_id = ?", assetID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"insert into ccheck_bad(run_id, asset_id, type) select id, ?, ? from ccheck_run where max_asset_id >= ?",
+		assetID, Repaired, assetID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "update asset set upload_time = ? where id = ?", at.UTC(), assetID)
+	return err
+}
+
 // LatestRun returns the latest completed run, or nil if no run has completed.
 func LatestRun(ctx context.Context, tx *sql.Tx) (*CheckRun, error) {
 	run := CheckRun{}
@@ -139,6 +160,7 @@ type assetLookup struct {
 	extID      int
 	covered    bool // asset id <= Run.MaxAssetID
 	bad        bool // in Run's ccheck_bad
+	repaired   bool // file put back after Run looked at it: the evidence is that upload
 	uploadTime int64
 }
 
@@ -190,19 +212,23 @@ func LookupAssets(ctx context.Context, tx *sql.Tx, userID int, hashes []string) 
 		for id := range coveredIDs {
 			ids = append(ids, id)
 		}
-		rows, err := tx.QueryContext(ctx, "select asset_id from ccheck_bad where run_id = ? and asset_id in (?"+
+		rows, err := tx.QueryContext(ctx, "select asset_id, type from ccheck_bad where run_id = ? and asset_id in (?"+
 			strings.Repeat(",?", len(coveredIDs)-1)+")", ids...)
 		if err != nil {
 			return nil, err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var id int
-			if err := rows.Scan(&id); err != nil {
+			var id, typ int
+			if err := rows.Scan(&id, &typ); err != nil {
 				return nil, err
 			}
 			for _, i := range coveredIDs[id] {
-				l.assets[i].bad = true
+				if typ == Repaired {
+					l.assets[i].repaired = true
+				} else {
+					l.assets[i].bad = true
+				}
 			}
 		}
 		if err := rows.Err(); err != nil {
@@ -216,9 +242,8 @@ func LookupAssets(ctx context.Context, tx *sql.Tx, userID int, hashes []string) 
 // is closed: it stats files.
 func (l *VerifyLookup) Check() []AssetVerify {
 	results := make([]AssetVerify, len(l.assets))
-	master, _ := common.GetUserPhotoDir(l.homeDir)
-	if ok, err := common.IsFileExist(master); err != nil || !ok {
-		// disk not mounted or library moved: nothing can be confirmed, but nothing is known lost
+	if !asset.LibraryDiskPresent(l.homeDir) {
+		// disk not mounted: nothing can be confirmed, but nothing is known lost
 		for i, a := range l.assets {
 			results[i] = AssetVerify{Hash: a.hash, Status: VerifyUnavailable}
 		}
@@ -246,10 +271,10 @@ func (l *VerifyLookup) check(a assetLookup) AssetVerify {
 			return AssetVerify{Status: VerifyFileMissing}
 		}
 	}
-	if a.covered {
-		if a.bad {
-			return AssetVerify{Status: VerifyBad}
-		}
+	if a.covered && a.bad {
+		return AssetVerify{Status: VerifyBad}
+	}
+	if a.covered && !a.repaired {
 		return AssetVerify{Status: VerifyOK, Evidence: EvidenceCCheck, CheckedAt: l.Run.StartTime}
 	}
 	return AssetVerify{Status: VerifyOK, Evidence: EvidenceUpload, CheckedAt: a.uploadTime}
