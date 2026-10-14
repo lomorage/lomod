@@ -683,12 +683,13 @@ func (ts *mainSuite) TestMaintenanceMasterAssetDeletedFromFSDirWithoutCleanRemov
 	}
 	logrus.Info("------ maintenance finish")
 
-	// category should return empty
+	// still in the DB
 	ts.validateBasicCategory(c, gpsCategory)
 
+	// but their files are gone: HEAD says so, so a client uploads them again and puts them back
 	for _, a := range gpsAssets {
 		ts.requestWithMethod(c, fmt.Sprintf("/asset/%s?token=%s", a.hash, ts.token), http.MethodHead,
-			http.StatusOK, nil, nil, nil)
+			http.StatusNotFound, nil, nil, nil)
 	}
 }
 

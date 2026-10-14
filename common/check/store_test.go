@@ -351,3 +351,107 @@ func (s *storeSuite) TestRunnerMarksAllAssetsOfUserWhoseLibraryIsGone(c *C) {
 	c.Assert(r.Start([]user.User{{ID: s.userID, Name: "bob", HomeDir: s.homeDir}}, snapshot), IsNil)
 	c.Assert(r.Unverified, DeepEquals, map[int]int{id: UserMissInFS})
 }
+
+func (s *storeSuite) lookupRepair(c *C, hash string) *asset.Repair {
+	var r *asset.Repair
+	s.inTx(c, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		r, err = asset.LookupRepair(ctx, tx, s.userID, hash)
+		return err
+	})
+	return r
+}
+
+// A re-upload of the same content puts a missing file back; verify then rests on that upload.
+func (s *storeSuite) TestRepairPutsMissingFileBack(c *C) {
+	id, hash, file := s.addAsset(c, "jpg")
+	s.completeRun(c, time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC), id, map[int]int{id: AssetMissInFS})
+
+	r := s.lookupRepair(c, hash)
+	c.Assert(r, NotNil)
+	c.Assert(r.MasterFile, Equals, file)
+	c.Assert(r.Missing(), Equals, false)
+
+	c.Assert(os.Remove(file), IsNil)
+	c.Assert(os.Remove(filepath.Dir(file)), IsNil) // the whole day folder went too
+	c.Assert(r.Missing(), Equals, true)
+
+	upload := filepath.Join(s.dir, "reupload.jpg")
+	c.Assert(ioutil.WriteFile(upload, []byte("asset 1"), 0644), IsNil)
+	_, err := r.Restore(upload, "", common.DefaultFolderPermission)
+	c.Assert(err, IsNil)
+	content, err := ioutil.ReadFile(file)
+	c.Assert(err, IsNil)
+	c.Assert(string(content), Equals, "asset 1")
+	c.Assert(r.Missing(), Equals, false)
+
+	s.inTx(c, func(ctx context.Context, tx *sql.Tx) error {
+		return MarkRepaired(ctx, tx, id, time.Now())
+	})
+	results, _ := s.verify(c, hash)
+	c.Assert(results[0].Status, Equals, VerifyOK)
+	c.Assert(results[0].Evidence, Equals, EvidenceUpload, Commentf("the earlier check never saw this file"))
+	c.Assert(results[0].CheckedAt > time.Now().Add(-time.Minute).Unix(), Equals, true)
+
+	// the next completed check vouches for it again
+	start := time.Now().Add(time.Minute)
+	s.completeRun(c, start, id, nil)
+	results, _ = s.verify(c, hash)
+	c.Assert(results[0].Evidence, Equals, EvidenceCCheck)
+	c.Assert(results[0].CheckedAt, Equals, start.Unix())
+}
+
+func (s *storeSuite) TestRepairedButCheckInProgressFindsItBadStaysBad(c *C) {
+	id, hash, _ := s.addAsset(c, "jpg")
+	var runID int64
+	s.inTx(c, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		runID, err = BeginRun(ctx, tx, time.Now(), id)
+		if err != nil {
+			return err
+		}
+		return MarkRepaired(ctx, tx, id, time.Now())
+	})
+	s.inTx(c, func(ctx context.Context, tx *sql.Tx) error {
+		return FinishRun(ctx, tx, runID, time.Now(), map[int]int{id: AssetMissInFS})
+	})
+	results, _ := s.verify(c, hash)
+	c.Assert(results[0].Status, Equals, VerifyBad)
+}
+
+func (s *storeSuite) TestNothingToRepair(c *C) {
+	c.Assert(s.lookupRepair(c, "0123456789abcdef0123456789abcdef01234567"), IsNil)
+
+	// a scanned-in link's file is the user's own, not ours to restore
+	hash := "1111111111111111111111111111111111111111"
+	s.inTx(c, func(ctx context.Context, tx *sql.Tx) error {
+		status := types.SetAssetStatus(0, types.AssetStatusScanLink)
+		_, err := asset.InsertAsset(ctx, tx, s.userID, 0, ext.JPG, &types.Asset{Hash: hash}, 10, status, time.Now())
+		return err
+	})
+	c.Assert(s.lookupRepair(c, hash), IsNil)
+}
+
+func (s *storeSuite) TestLibraryNotMountedIsNotMissing(c *C) {
+	_, hash, _ := s.addAsset(c, "jpg")
+	r := s.lookupRepair(c, hash)
+	c.Assert(os.Rename(s.homeDir, s.homeDir+".unplugged"), IsNil)
+	c.Assert(r.Missing(), Equals, false, Commentf("an upload must not refill an empty mount point"))
+}
+
+func (s *storeSuite) TestRepairLivePhoto(c *C) {
+	_, hash, imgFile := s.addAsset(c, ext.ZIPString)
+	r := s.lookupRepair(c, hash)
+	c.Assert(r.Missing(), Equals, false)
+	c.Assert(os.Remove(imgFile), IsNil)
+	c.Assert(r.Missing(), Equals, true)
+
+	zip := filepath.Join(s.dir, "re.zip")
+	img := filepath.Join(s.dir, "re_image.heic")
+	c.Assert(ioutil.WriteFile(zip, []byte("asset 1"), 0644), IsNil)
+	c.Assert(ioutil.WriteFile(img, []byte("image"), 0644), IsNil)
+	previewSrc, err := r.Restore(zip, img, common.DefaultFolderPermission)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(previewSrc, "_image.heic"), Equals, true, Commentf(previewSrc))
+	c.Assert(r.Missing(), Equals, false)
+}
