@@ -85,7 +85,16 @@ try {
         throw "lomoupg.exe not found at $lomoupg"
     }
 
-    Write-Step "Checking for updates (current: $currVersion)"
+    # China installs (install.ps1 run with LOMOD_CHINA=1 writes lomod.china next to lomod.exe):
+    # GitHub Releases downloads are unreliable from mainland China, so fetch the release zip
+    # through the gfw.lomorage.com proxy, same as install.ps1. The manifest still comes direct.
+    $chinaMarker = Join-Path $InstallDir "lomod.china"
+    $prefixArgs = @()
+    if ($env:LOMOD_CHINA -eq "1" -or (Test-Path $chinaMarker)) {
+        $prefixArgs = @("-download-prefix", "https://gfw.lomorage.com/")
+    }
+
+    Write-Step "Checking for updates (current: $currVersion)$(if ($prefixArgs) { ' via gfw.lomorage.com proxy' })"
     # -only-newer: never install a build older than the running one, e.g. when the manifest
     # key this install follows points at an older release than it has. lomoupg.exe ships in
     # the same zip as this script, so the one here always knows the flag.
@@ -98,7 +107,8 @@ try {
         -k $ManifestKey `
         -prc (Join-Path $InstallDir "lomorage-stop.bat") `
         -psc (Join-Path $InstallDir "lomorage-post-update.bat") `
-        -psca $backupRoot
+        -psca $backupRoot `
+        @prefixArgs
     $exitCode = $LASTEXITCODE
 
     # Prune old backups regardless of whether this run updated anything -- lomoupg only ever

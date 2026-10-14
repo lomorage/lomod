@@ -21,6 +21,9 @@ if defined LATEST_BAK (
     if exist "%BACKUP_ROOT%\%LATEST_BAK%\lomod.args" (
         copy /y "%BACKUP_ROOT%\%LATEST_BAK%\lomod.args" "%SCRIPT_DIR%lomod.args" >nul
     )
+    if exist "%BACKUP_ROOT%\%LATEST_BAK%\lomod.china" (
+        copy /y "%BACKUP_ROOT%\%LATEST_BAK%\lomod.china" "%SCRIPT_DIR%lomod.china" >nul
+    )
 )
 
 if not exist "%SCRIPT_DIR%lomod.args" (

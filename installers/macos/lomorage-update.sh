@@ -42,6 +42,13 @@
 #   --manifest-key <key>   Default: macos-cli-arm64 or macos-cli-amd64, chosen from `uname -m`.
 #   --keep-backups <n>     How many previous installs to keep under lomod-update-backup, next
 #                           to the install dir. Default: 1
+#   --china                Download the release tarball through https://gfw.lomorage.com/<url>
+#                           (lomoupg --download-prefix), like install.sh's LOMOD_CHINA=1. Also
+#                           on when a lomod.china marker sits next to lomod.args (written by
+#                           install.sh, carried across updates). The manifest itself is still read
+#                           from --release-url directly: gfw.lomorage.com only proxies GitHub
+#                           URLs (it 404s https://lomorage.com/release.json), and lomorage.com
+#                           is reachable directly from China.
 #   --wait-for-network     Give the network a few minutes to come up before checking. Passed by
 #                           the LaunchAgent, which also runs at login -- typically before Wi-Fi
 #                           has reconnected.
@@ -107,6 +114,9 @@ finish_update() {
     local backup="$1"
     [[ -x "${INSTALL_DIR}/lomod" ]] || { log "new release has no lomod binary"; return 1; }
     cp -p "${backup}/lomod.args" "${INSTALL_DIR}/lomod.args" || { log "could not restore lomod.args"; return 1; }
+    if [[ -f "${backup}/lomod.china" ]]; then
+        cp -p "${backup}/lomod.china" "${INSTALL_DIR}/lomod.china" || { log "could not restore lomod.china"; return 1; }
+    fi
     [[ -s "${INSTALL_DIR}/version.txt" ]] || { log "lomoupg did not write version.txt"; return 1; }
     "${INSTALL_DIR}/lomod" --version >/dev/null 2>&1 || { log "new lomod does not run"; return 1; }
     refresh_app_bundle
@@ -167,6 +177,7 @@ main() {
     local release_url="https://lomorage.com/release.json"
     local manifest_key=""
     local wait_network=""
+    local china=""
     KEEP_BACKUPS=1
 
     while [[ $# -gt 0 ]]; do
@@ -175,6 +186,7 @@ main() {
             --release-url) release_url="$2"; shift 2 ;;
             --manifest-key) manifest_key="$2"; shift 2 ;;
             --keep-backups) KEEP_BACKUPS="$2"; shift 2 ;;
+            --china) china=1; shift ;;
             --wait-for-network) wait_network=1; shift ;;
             *) echo "unknown argument: $1" >&2; exit 1 ;;
         esac
@@ -226,8 +238,17 @@ main() {
     local prev_backup
     prev_backup="$(latest_backup)"
 
-    log "Checking for updates (current: ${curr_version})"
+    if [[ -f "${INSTALL_DIR}/lomod.china" ]]; then
+        china=1
+    fi
+    local china_args=()
+    if [[ -n "${china}" ]]; then
+        china_args=(--download-prefix "https://gfw.lomorage.com/")
+    fi
+
+    log "Checking for updates (current: ${curr_version})${china:+, downloading via gfw.lomorage.com proxy}"
     "${lomoupg}" \
+        ${china_args[@]+"${china_args[@]}"} \
         -a "${INSTALL_DIR}" \
         -b "${BACKUP_ROOT}" \
         -c "${curr_version}" \
