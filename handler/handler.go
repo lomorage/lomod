@@ -548,14 +548,11 @@ func (h *Handler) StartWebdevListener() {
 	logrus.Infof("start listen webdev at :%d", h.conf.ListenPortWebdev)
 
 	h.webdavFS = newMyFS(h)
-	s := &srv{
-		lomodHandler: h,
-		verify:       h.verifyPassword,
-		h: &webdav.Handler{
-			Prefix:     "",
-			FileSystem: h.webdavFS,
-			LockSystem: webdav.NewMemLS(),
-		},
+	s := newSrv(h, h.storedPassword)
+	s.h = &webdav.Handler{
+		Prefix:     "",
+		FileSystem: h.webdavFS,
+		LockSystem: webdav.NewMemLS(),
 	}
 
 	http.HandleFunc("/", s.ServeHTTP)
@@ -564,16 +561,13 @@ func (h *Handler) StartWebdevListener() {
 	}
 }
 
-// verifyPassword checks a plain-text password against the user's account (WebDAV Basic auth).
-func (h *Handler) verifyPassword(username, password string) bool {
-	err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := user.VerifyPassword(ctx, tx, username, password)
+// storedPassword reads a user's stored password hash for WebDAV Basic auth ("" if no such user).
+func (h *Handler) storedPassword(username string) (stored string, err error) {
+	err = dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
+		stored, err = user.StoredPassword(ctx, tx, username)
 		return err
 	})
-	if err != nil && err != common.ErrInvalidPasswd {
-		logrus.Warnf("webdav sign-in for %s: %v", username, err)
-	}
-	return err == nil
+	return stored, err
 }
 
 // CreateRouter associates handler with URL endpoints.

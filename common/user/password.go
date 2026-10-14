@@ -9,19 +9,20 @@ import (
 	"bitbucket.org/lomoware/lomo-backend/common/security"
 )
 
-// VerifyPassword checks a plain-text password, as sent by clients that can't hash it the way
-// the apps do (e.g. WebDAV Basic auth), against username's account. It hashes it exactly like
-// the apps (security.EncryptPassword) and compares with the stored value. Returns the user id.
-func VerifyPassword(ctx context.Context, tx *sql.Tx, username, password string) (int, error) {
-	userid, stored, err := getUserIDPassword(ctx, tx, username)
-	if err != nil {
-		if common.IsErrNoRows(err) {
-			return -1, common.ErrInvalidPasswd
-		}
-		return -1, err
+// StoredPassword returns username's stored password hash, "" if there's no such user.
+func StoredPassword(ctx context.Context, tx *sql.Tx, username string) (string, error) {
+	_, stored, err := getUserIDPassword(ctx, tx, username)
+	if common.IsErrNoRows(err) {
+		return "", nil
 	}
-	if subtle.ConstantTimeCompare([]byte(stored), []byte(security.EncryptPassword(username, password))) != 1 {
-		return -1, common.ErrInvalidPasswd
-	}
-	return userid, nil
+	return stored, err
+}
+
+// PasswordMatches checks a plain-text password, as sent by clients that can't hash it the way
+// the apps do (e.g. WebDAV Basic auth), against the stored hash from StoredPassword: it hashes
+// it exactly like the apps (security.EncryptPassword). It hashes even for an unknown user (stored
+// ""), so the time taken doesn't tell which accounts exist. Call it outside a DB transaction.
+func PasswordMatches(username, password, stored string) bool {
+	hashed := security.EncryptPassword(username, password)
+	return stored != "" && subtle.ConstantTimeCompare([]byte(stored), []byte(hashed)) == 1
 }

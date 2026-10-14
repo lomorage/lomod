@@ -48,21 +48,44 @@ type srv struct {
 	h *webdav.Handler
 	lomodHandler *Handler
 
-	// verify checks a username and plain-text password (user.VerifyPassword against the DB).
-	verify func(username, password string) bool
+	// storedPassword reads a user's stored password hash ("" for no such user). A DB read only:
+	// the password itself is hashed after the read, outside the transaction, because lomod has a
+	// single SQLite connection and an argon2 hash takes tens of ms on a small NAS.
+	storedPassword func(username string) (string, error)
+
+	// failDelay slows down each refused sign-in; after maxFailures in a row an address is refused
+	// outright for blockFor. Set by newSrv; zero in tests.
+	failDelay   time.Duration
+	maxFailures int
+	blockFor    time.Duration
 
 	authMu    sync.Mutex
-	authCache map[[sha256.Size]byte]authEntry // hash(user, password) -> who and until when
+	authCache map[[sha256.Size]byte]time.Time // hash(user, password, stored hash) -> valid until
+	failures  map[string]*authFailures        // by client IP
 }
 
-type authEntry struct {
-	username string
-	expires  time.Time
+type authFailures struct {
+	count        int
+	blockedUntil time.Time
 }
 
 // webdavAuthTTL: WebDAV clients send credentials on every request, and checking a password
-// costs an argon2 hash (tens of ms on a small NAS), so a verified pair is remembered briefly.
+// costs an argon2 hash, so a verified pair is remembered briefly. The cache key includes the
+// stored hash, so a password change or a deleted user takes effect at once.
 const webdavAuthTTL = 10 * time.Minute
+
+// maxTrackedAddrs bounds the failed sign-in bookkeeping.
+const maxTrackedAddrs = 1024
+
+func newSrv(h *Handler, storedPassword func(string) (string, error)) *srv {
+	return &srv{
+		lomodHandler:   h,
+		storedPassword: storedPassword,
+		failDelay:      time.Second,
+		maxFailures:    10,
+		blockFor:       5 * time.Minute,
+	}
+}
 
 // webdavUserKey carries the signed-in user of a remote request down to the file system, which
 // then only lists that user. Local requests carry none and see every user, as before.
@@ -82,36 +105,99 @@ func isLoopbackAddr(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// authenticate returns the user a remote request signed in as with HTTP Basic auth.
-func (s *srv) authenticate(r *http.Request) (string, bool) {
-	username, password, ok := r.BasicAuth()
-	if !ok || username == "" {
-		return "", false
+// isLocalRequest: from a program on this computer. A request a reverse proxy or tunnel on this
+// computer passes on also comes from loopback, but it carries forwarding headers and may come
+// from anywhere, so it isn't local.
+func isLocalRequest(r *http.Request) bool {
+	if !isLoopbackAddr(r.RemoteAddr) {
+		return false
 	}
-	key := sha256.Sum256([]byte(username + string(rune(0)) + password))
+	for _, h := range []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip"} {
+		if r.Header.Get(h) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func clientIP(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
+}
+
+type authResult int
+
+const (
+	authOK authResult = iota
+	authRefused
+	authBlocked // too many refused sign-ins from this address
+	authError
+)
+
+// authenticate checks a remote request's HTTP Basic credentials; the user name if they're right.
+func (s *srv) authenticate(r *http.Request) (string, authResult) {
+	ip := clientIP(r.RemoteAddr)
 	now := time.Now()
 	s.authMu.Lock()
-	if e, ok := s.authCache[key]; ok && now.Before(e.expires) {
+	if f := s.failures[ip]; f != nil && now.Before(f.blockedUntil) {
 		s.authMu.Unlock()
-		return e.username, true
+		return "", authBlocked
 	}
 	s.authMu.Unlock()
 
-	if !s.verify(username, password) {
-		return "", false
+	username, password, ok := r.BasicAuth()
+	if !ok || username == "" {
+		return "", authRefused // no credentials yet: the client's first try, not a failure
 	}
+	stored, err := s.storedPassword(username)
+	if err != nil {
+		logrus.Warnf("webdav sign-in for %s: %v", username, err)
+		return "", authError
+	}
+	key := sha256.Sum256([]byte(username + "\x00" + password + "\x00" + stored))
+	s.authMu.Lock()
+	if until, ok := s.authCache[key]; ok && now.Before(until) {
+		s.authMu.Unlock()
+		return username, authOK
+	}
+	s.authMu.Unlock()
+
+	if !user.PasswordMatches(username, password, stored) {
+		s.authMu.Lock()
+		if s.failures == nil || len(s.failures) > maxTrackedAddrs {
+			s.failures = map[string]*authFailures{} // a LAN has far fewer devices; start over
+		}
+		f := s.failures[ip]
+		if f == nil {
+			f = &authFailures{}
+			s.failures[ip] = f
+		}
+		f.count++
+		if s.maxFailures > 0 && f.count >= s.maxFailures {
+			f.count = 0
+			f.blockedUntil = now.Add(s.blockFor)
+			logrus.Warnf("webdav: %d failed sign-ins from %s, refusing it for %s", s.maxFailures, ip, s.blockFor)
+		}
+		s.authMu.Unlock()
+		time.Sleep(s.failDelay)
+		return "", authRefused
+	}
+
 	s.authMu.Lock()
 	if s.authCache == nil {
-		s.authCache = map[[sha256.Size]byte]authEntry{}
+		s.authCache = map[[sha256.Size]byte]time.Time{}
 	}
-	for k, e := range s.authCache { // keep the cache small
-		if now.After(e.expires) {
+	for k, until := range s.authCache { // keep the cache small
+		if now.After(until) {
 			delete(s.authCache, k)
 		}
 	}
-	s.authCache[key] = authEntry{username: username, expires: now.Add(webdavAuthTTL)}
+	s.authCache[key] = now.Add(webdavAuthTTL)
+	delete(s.failures, ip)
 	s.authMu.Unlock()
-	return username, true
+	return username, authOK
 }
 
 // remotePathAllowed: a remote user may see the root (which then lists only them) and their own
@@ -124,14 +210,22 @@ func remotePathAllowed(urlPath, username string) bool {
 
 // gate decides who may use the WebDAV view. Same computer: no sign-in (the OS user can already
 // read the library folder, and Windows Explorer won't send Basic auth over plain HTTP anyway).
-// From anywhere else on the network: sign in with a Lomorage account and see only your own
-// photos. It writes the refusal itself and returns false; otherwise the request to serve.
+// From anywhere else: sign in with a Lomorage account and see only your own photos. It writes
+// the refusal itself and returns false; otherwise the request to serve.
 func (s *srv) gate(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
-	if isLoopbackAddr(r.RemoteAddr) {
+	if isLocalRequest(r) {
 		return r, true
 	}
-	username, ok := s.authenticate(r)
-	if !ok {
+	username, res := s.authenticate(r)
+	switch res {
+	case authBlocked:
+		w.Header().Set("Retry-After", strconv.Itoa(int(s.blockFor.Seconds())))
+		http.Error(w, "Too many failed sign-ins, try again later", http.StatusTooManyRequests)
+		return r, false
+	case authError:
+		http.Error(w, "Can't check the sign-in right now", http.StatusServiceUnavailable)
+		return r, false
+	case authRefused:
 		w.Header().Set("WWW-Authenticate", `Basic realm="Lomorage", charset="UTF-8"`)
 		http.Error(w, "Sign in with your Lomorage account", http.StatusUnauthorized)
 		return r, false
