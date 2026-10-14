@@ -152,12 +152,7 @@ async function render() {
   }
 
   if (type === 'video') {
-    const video = document.createElement('video');
-    video.src = link.href;
-    video.controls = true;
-    video.autoplay = true;
-    video.playsInline = true;
-    frag.appendChild(video);
+    frag.appendChild(videoNode(link));
     stage.replaceChildren(frag);
     return;
   }
@@ -184,6 +179,70 @@ async function render() {
   // it loads faster in practice than waiting on a resize — confirmed against
   // a real server. The loading state above covers the (network) wait either way.
   img.src = link.href;
+}
+
+// The original plays where the browser has its codec (H.264 MP4, WebM). Phones also record
+// HEVC, and older cameras MPEG-4 Part 2, AVI or MPG, which browsers often can't play -- the
+// player then errors, or plays sound over a black picture. Fall back to the 480p H.264 copy
+// lomod makes of every video (480x0, already generated, so no transcode on request), and
+// offer the original as a download.
+function videoNode(link) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lomo-lightbox-video';
+
+  // The original can report trouble twice (no picture, then an error); only the first counts.
+  // The copy gets its own element so the original's late events can't touch it.
+  let fellBack = false;
+  const original = playerNode(link.href, () => {
+    if (fellBack || items[index] !== link) return;
+    fellBack = true;
+    original.removeAttribute('src');
+    original.load(); // stop fetching the original
+    const copy = playerNode(previewVideoUrl(link.title), () => {
+      if (items[index] !== link) return;
+      wrap.replaceChildren(errorNode('This video can\'t play in the browser.'), downloadNode(link));
+    });
+    const note = document.createElement('div');
+    note.className = 'lomo-lightbox-note';
+    note.append('Playing a smaller copy: this browser can\'t play the original. ', downloadNode(link));
+    wrap.replaceChildren(copy, note);
+  });
+  wrap.appendChild(original);
+  return wrap;
+}
+
+// A <video> calling onFail once if src can't be shown: an error, or sound only (the browser
+// lacks the picture codec).
+function playerNode(src, onFail) {
+  const video = document.createElement('video');
+  video.controls = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  let failed = false;
+  const fail = () => {
+    if (failed) return;
+    failed = true;
+    onFail();
+  };
+  video.addEventListener('error', fail);
+  video.addEventListener('loadedmetadata', () => {
+    if (video.videoWidth === 0) fail();
+  });
+  video.src = src;
+  return video;
+}
+
+function previewVideoUrl(name) {
+  return CONFIG.getServiceUrl() + '/' + CONFIG.PREVIEW_URI + '/' + name +
+    '?width=480&height=-1&icodec=mp4&token=' + sessionStorage.getItem('token');
+}
+
+function downloadNode(link) {
+  const a = document.createElement('a');
+  a.href = link.href;
+  a.download = link.title || '';
+  a.textContent = 'Download the original';
+  return a;
 }
 
 function errorNode(message) {

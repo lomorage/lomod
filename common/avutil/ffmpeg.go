@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"bitbucket.org/lomoware/lomo-backend/common"
 	"bitbucket.org/lomoware/lomo-backend/common/cmd"
@@ -20,6 +22,42 @@ func DefaultEngine(transcodeApp, probeApp string) Engine {
 type ffmpeg struct {
 	transcodeApp string
 	probeApp     string
+
+	videoCodecOnce sync.Once
+	videoCodecArgs []string
+}
+
+// videoCodec returns the encoder arguments for an H.264 video preview, the codec every browser
+// and phone plays. ffmpeg only picks H.264 for .mp4 on its own when it's built with libx264
+// (GPL); builds without it, like the Windows bundle, fall back to MPEG-4 Part 2, which browsers
+// can't play -- so ask such a build for OpenH264 instead.
+func (f *ffmpeg) videoCodec() []string {
+	f.videoCodecOnce.Do(func() {
+		out, err := cmd.Run(f.transcodeApp, "-hide_banner", "-encoders")
+		if err != nil {
+			logrus.Warnf("list %s encoders: %v", f.transcodeApp, err)
+			return
+		}
+		f.videoCodecArgs = h264EncoderArgs(string(out))
+		logrus.Infof("video preview encoder args: %v", f.videoCodecArgs)
+	})
+	return f.videoCodecArgs
+}
+
+func h264EncoderArgs(encoders string) []string {
+	has := map[string]bool{}
+	for _, line := range strings.Split(encoders, "\n") {
+		if fields := strings.Fields(line); len(fields) >= 2 && strings.HasPrefix(fields[0], "V") {
+			has[fields[1]] = true
+		}
+	}
+	switch {
+	case has["libx264"]:
+		return nil // ffmpeg's default for .mp4
+	case has["libopenh264"]:
+		return []string{"-c:v", "libopenh264", "-pix_fmt", "yuv420p", "-b:v", "1200k"}
+	}
+	return nil
 }
 
 // ProbeVideoInfo return video infromation
@@ -55,7 +93,9 @@ func (f *ffmpeg) XcodeVideoToVideo(ctx context.Context, assetpath, previewpath s
 	defer os.RemoveAll(tmpfile)
 	logrus.Infof("generate video preview %s - %s", previewpath, filter)
 	if err := common.RetryIfKnownError(fmt.Sprintf("while generating %s for video %s with size %dx%d", filter, previewpath, imgWidth, imgHeight), func() error {
-		return cmd.ExecLowPriorityContext(ctx, f.transcodeApp, "-i", assetpath, "-y", "-threads", "1", "-r", "24", "-max_muxing_queue_size", "99999", "-vf", filter, tmpfile)
+		args := []string{"-i", assetpath, "-y", "-threads", "1", "-r", "24", "-max_muxing_queue_size", "99999", "-vf", filter}
+		args = append(args, f.videoCodec()...)
+		return cmd.ExecLowPriorityContext(ctx, f.transcodeApp, append(args, tmpfile)...)
 	}); err != nil {
 		return err
 	}
