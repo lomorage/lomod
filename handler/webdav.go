@@ -53,19 +53,31 @@ type srv struct {
 	// single SQLite connection and an argon2 hash takes tens of ms on a small NAS.
 	storedPassword func(username string) (string, error)
 
-	// failDelay slows down each refused sign-in; after maxFailures in a row an address is refused
-	// outright for blockFor. Set by newSrv; zero in tests.
-	failDelay   time.Duration
-	maxFailures int
-	blockFor    time.Duration
+	// matches checks a password against the stored hash (user.PasswordMatches; a stub in tests).
+	matches func(username, password, stored string) bool
+	// hashSlots bounds how many password hashes run at once: each takes 4 MB, and a burst of
+	// parallel requests must not exhaust a small NAS's memory. A request waits up to hashWait.
+	hashSlots chan struct{}
+	hashWait  time.Duration
+
+	// failDelay slows down each refused sign-in; after maxFailures (each within failureMemory of
+	// the last) an address is refused outright for blockFor. Set by newSrv; zero in tests.
+	failDelay     time.Duration
+	maxFailures   int
+	failureMemory time.Duration
+	blockFor      time.Duration
 
 	authMu    sync.Mutex
 	authCache map[[sha256.Size]byte]time.Time // hash(user, password, stored hash) -> valid until
 	failures  map[string]*authFailures        // by client IP
 }
 
+// authFailures is kept per client IP. Behind a reverse proxy on this computer every remote
+// client shares 127.0.0.1, so one client's failures block them all; that errs on the safe side,
+// and the forwarding headers can't be trusted to tell clients apart.
 type authFailures struct {
 	count        int
+	last         time.Time
 	blockedUntil time.Time
 }
 
@@ -81,8 +93,12 @@ func newSrv(h *Handler, storedPassword func(string) (string, error)) *srv {
 	return &srv{
 		lomodHandler:   h,
 		storedPassword: storedPassword,
+		matches:        user.PasswordMatches,
+		hashSlots:      make(chan struct{}, 2),
+		hashWait:       10 * time.Second,
 		failDelay:      time.Second,
 		maxFailures:    10,
+		failureMemory:  time.Hour,
 		blockFor:       5 * time.Minute,
 	}
 }
@@ -133,6 +149,7 @@ const (
 	authOK authResult = iota
 	authRefused
 	authBlocked // too many refused sign-ins from this address
+	authBusy    // too many sign-ins being checked at once
 	authError
 )
 
@@ -157,14 +174,25 @@ func (s *srv) authenticate(r *http.Request) (string, authResult) {
 		return "", authError
 	}
 	key := sha256.Sum256([]byte(username + "\x00" + password + "\x00" + stored))
-	s.authMu.Lock()
-	if until, ok := s.authCache[key]; ok && now.Before(until) {
-		s.authMu.Unlock()
+	if s.cached(key, now) {
 		return username, authOK
 	}
-	s.authMu.Unlock()
 
-	if !user.PasswordMatches(username, password, stored) {
+	select {
+	case s.hashSlots <- struct{}{}:
+	case <-time.After(s.hashWait):
+		return "", authBusy
+	}
+	// Explorer opens several connections with the same credentials at once: whichever hashed
+	// first has cached them by now.
+	if s.cached(key, time.Now()) {
+		<-s.hashSlots
+		return username, authOK
+	}
+	ok = s.matches(username, password, stored)
+	<-s.hashSlots
+
+	if !ok {
 		s.authMu.Lock()
 		if s.failures == nil || len(s.failures) > maxTrackedAddrs {
 			s.failures = map[string]*authFailures{} // a LAN has far fewer devices; start over
@@ -174,7 +202,11 @@ func (s *srv) authenticate(r *http.Request) (string, authResult) {
 			f = &authFailures{}
 			s.failures[ip] = f
 		}
+		if now.Sub(f.last) > s.failureMemory {
+			f.count = 0 // old failures are forgotten
+		}
 		f.count++
+		f.last = now
 		if s.maxFailures > 0 && f.count >= s.maxFailures {
 			f.count = 0
 			f.blockedUntil = now.Add(s.blockFor)
@@ -200,6 +232,13 @@ func (s *srv) authenticate(r *http.Request) (string, authResult) {
 	return username, authOK
 }
 
+func (s *srv) cached(key [sha256.Size]byte, now time.Time) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	until, ok := s.authCache[key]
+	return ok && now.Before(until)
+}
+
 // remotePathAllowed: a remote user may see the root (which then lists only them) and their own
 // folder, never another user's.
 func remotePathAllowed(urlPath, username string) bool {
@@ -221,6 +260,10 @@ func (s *srv) gate(w http.ResponseWriter, r *http.Request) (*http.Request, bool)
 	case authBlocked:
 		w.Header().Set("Retry-After", strconv.Itoa(int(s.blockFor.Seconds())))
 		http.Error(w, "Too many failed sign-ins, try again later", http.StatusTooManyRequests)
+		return r, false
+	case authBusy:
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "Busy checking sign-ins, try again shortly", http.StatusServiceUnavailable)
 		return r, false
 	case authError:
 		http.Error(w, "Can't check the sign-in right now", http.StatusServiceUnavailable)

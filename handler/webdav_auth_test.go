@@ -2,8 +2,11 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +52,7 @@ func TestRemotePathAllowed(t *testing.T) {
 // gateSrv: users alice/pw and bob/pw-b; reads counts storedPassword (DB) calls.
 type gateSrv struct {
 	*srv
+	mu        sync.Mutex // the stub DB is read from parallel requests
 	passwords map[string]string
 	reads     int
 	dbErr     error
@@ -60,6 +64,8 @@ func newGateSrv() *gateSrv {
 		"bob":   security.EncryptPassword("bob", "pw-b"),
 	}}
 	g.srv = newSrv(nil, func(u string) (string, error) {
+		g.mu.Lock()
+		defer g.mu.Unlock()
 		g.reads++
 		return g.passwords[u], g.dbErr
 	})
@@ -194,5 +200,93 @@ func TestWebdavGateDBError(t *testing.T) {
 	g.dbErr = errors.New("database is locked")
 	if w, _, ok := g.do(gateReq{remote: lan, path: "/", user: "alice", pass: "pw"}); ok || w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("got ok=%v code=%d", ok, w.Code)
+	}
+}
+
+// slowMatches stands in for the argon2 check: takes a while and records how many run at once.
+func slowMatches(g *gateSrv, d time.Duration, running, peak, calls *int32) {
+	real := g.matches
+	g.matches = func(u, p, stored string) bool {
+		atomic.AddInt32(calls, 1)
+		n := atomic.AddInt32(running, 1)
+		for {
+			old := atomic.LoadInt32(peak)
+			if n <= old || atomic.CompareAndSwapInt32(peak, old, n) {
+				break
+			}
+		}
+		time.Sleep(d)
+		atomic.AddInt32(running, -1)
+		return real(u, p, stored)
+	}
+}
+
+func parallel(n int, f func(i int)) {
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) { defer wg.Done(); f(i) }(i)
+	}
+	wg.Wait()
+}
+
+// A burst of sign-ins must not run a 4 MB hash each all at once.
+func TestWebdavGateBoundsConcurrentHashing(t *testing.T) {
+	g := newGateSrv()
+	var running, peak, calls int32
+	slowMatches(g, 20*time.Millisecond, &running, &peak, &calls)
+	parallel(20, func(i int) {
+		g.do(gateReq{remote: fmt.Sprintf("192.168.1.%d:1", i+1), path: "/", user: "alice", pass: fmt.Sprintf("guess%d", i)})
+	})
+	if peak > int32(cap(g.hashSlots)) {
+		t.Fatalf("%d hashes ran at once, want at most %d", peak, cap(g.hashSlots))
+	}
+}
+
+// Explorer's parallel connections with the same right password: hashed once (or once per slot
+// that started before the first finished), not once per connection.
+func TestWebdavGateHashesParallelSameCredentialsOnce(t *testing.T) {
+	g := newGateSrv()
+	var running, peak, calls int32
+	slowMatches(g, 20*time.Millisecond, &running, &peak, &calls)
+	parallel(10, func(int) {
+		if _, _, ok := g.do(gateReq{remote: lan, path: "/alice", user: "alice", pass: "pw"}); !ok {
+			t.Errorf("refused")
+		}
+	})
+	if calls > int32(cap(g.hashSlots)) {
+		t.Fatalf("hashed %d times for 10 identical sign-ins", calls)
+	}
+}
+
+func TestWebdavGateBusyWhenSlotsAreTaken(t *testing.T) {
+	g := newGateSrv()
+	g.hashSlots = make(chan struct{}, 1)
+	g.hashWait = 10 * time.Millisecond
+	release := make(chan struct{})
+	g.matches = func(u, p, stored string) bool { <-release; return false }
+	done := make(chan struct{})
+	go func() { g.do(gateReq{remote: lan, path: "/", user: "alice", pass: "x"}); close(done) }()
+	time.Sleep(20 * time.Millisecond) // the first holds the only slot
+	w, _, ok := g.do(gateReq{remote: "192.168.1.30:1", path: "/", user: "alice", pass: "pw"})
+	close(release)
+	<-done
+	if ok || w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("got ok=%v code=%d", ok, w.Code)
+	}
+}
+
+func TestWebdavGateForgetsOldFailures(t *testing.T) {
+	g := newGateSrv()
+	g.failureMemory = 10 * time.Millisecond
+	for i := 0; i < g.maxFailures-1; i++ {
+		g.do(gateReq{remote: lan, path: "/", user: "alice", pass: "guess"})
+	}
+	time.Sleep(30 * time.Millisecond)
+	for i := 0; i < g.maxFailures-1; i++ {
+		g.do(gateReq{remote: lan, path: "/", user: "alice", pass: "guess"})
+	}
+	if w, _, ok := g.do(gateReq{remote: lan, path: "/", user: "alice", pass: "pw"}); !ok {
+		t.Fatalf("blocked by failures that should have been forgotten: %d", w.Code)
 	}
 }
