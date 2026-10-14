@@ -89,9 +89,14 @@ func (r *Repair) Missing() bool {
 
 // Restore moves an uploaded, SHA-verified file (and a live photo's still image) to where the
 // asset's file belongs. Returns the path to make previews from.
+//
+// The upload took a while since Missing was asked, so the disk is checked again: if it went away
+// meanwhile, folders made now would land on the empty mount point and make the disk look present
+// (LibraryDiskPresent) from then on. Without the disk id file, folders are only made below a
+// library folder that exists, never the library folder itself.
 func (r *Repair) Restore(srcFile, srcImgFile string, folderPerm os.FileMode) (string, error) {
 	masterDir := filepath.Dir(r.MasterFile)
-	if err := os.MkdirAll(masterDir, folderPerm); err != nil {
+	if err := r.mkMasterDir(masterDir, folderPerm); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(r.PreviewDir, folderPerm); err != nil {
@@ -113,6 +118,29 @@ func (r *Repair) Restore(srcFile, srcImgFile string, folderPerm os.FileMode) (st
 	}
 	logrus.Infof("restored missing file of asset %d: %s", r.AssetID, r.MasterFile)
 	return previewSrc, nil
+}
+
+func (r *Repair) mkMasterDir(masterDir string, folderPerm os.FileMode) error {
+	if !LibraryDiskPresent(r.homeDir) {
+		return common.ErrDeviceNotMount
+	}
+	if nonEmptyFile(filepath.Join(r.homeDir, common.HiddenLomoDir, types.UUIDFilename)) {
+		return os.MkdirAll(masterDir, folderPerm) // the disk is known: the library may be recreated
+	}
+	root := filepath.Join(r.homeDir, common.AppPhoto, common.AppPhotoMasterDir)
+	rel, err := filepath.Rel(root, masterDir)
+	if err != nil {
+		return err
+	}
+	dir := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) { // year, month, day
+		dir = filepath.Join(dir, part)
+		// Mkdir, not MkdirAll: fails if the library folder vanished since the check above
+		if err := os.Mkdir(dir, folderPerm); err != nil && !os.IsExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 // LibraryDiskPresent reports whether the disk holding a user's library is there: its disk id

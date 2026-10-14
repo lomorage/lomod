@@ -3,6 +3,7 @@ package avutil
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestH264EncoderArgs(t *testing.T) {
@@ -20,5 +21,19 @@ func TestH264EncoderArgs(t *testing.T) {
 		if got := h264EncoderArgs(c.encoders); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: got %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+// A failed ffmpeg query isn't remembered as the answer: it is asked again after videoCodecRetry.
+func TestVideoCodecRetriesAfterAFailure(t *testing.T) {
+	f := &ffmpeg{transcodeApp: "no-such-ffmpeg-binary"}
+	if args := f.videoCodec(); args != nil {
+		t.Fatalf("got %v from a missing ffmpeg", args)
+	}
+	if f.videoCodecKnown {
+		t.Fatalf("a failure was cached as the answer")
+	}
+	if wait := time.Until(f.videoCodecRetryAt); wait <= 0 || wait > videoCodecRetry {
+		t.Fatalf("retry in %v, want within %v", wait, videoCodecRetry)
 	}
 }

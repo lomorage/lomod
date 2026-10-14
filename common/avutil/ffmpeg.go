@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"bitbucket.org/lomoware/lomo-backend/common"
 	"bitbucket.org/lomoware/lomo-backend/common/cmd"
@@ -23,24 +24,36 @@ type ffmpeg struct {
 	transcodeApp string
 	probeApp     string
 
-	videoCodecOnce sync.Once
-	videoCodecArgs []string
+	videoCodecMu      sync.Mutex
+	videoCodecKnown   bool
+	videoCodecArgs    []string
+	videoCodecRetryAt time.Time
 }
+
+// videoCodecRetry: how long to wait before asking ffmpeg for its encoders again after that failed.
+const videoCodecRetry = time.Minute
 
 // videoCodec returns the encoder arguments for an H.264 video preview, the codec every browser
 // and phone plays. ffmpeg only picks H.264 for .mp4 on its own when it's built with libx264
 // (GPL); builds without it, like the Windows bundle, fall back to MPEG-4 Part 2, which browsers
 // can't play -- so ask such a build for OpenH264 instead.
+// Only a successful answer is kept: if ffmpeg couldn't be asked (e.g. mid-update), this preview
+// uses ffmpeg's default and the question is asked again a minute later.
 func (f *ffmpeg) videoCodec() []string {
-	f.videoCodecOnce.Do(func() {
-		out, err := cmd.Run(f.transcodeApp, "-hide_banner", "-encoders")
-		if err != nil {
-			logrus.Warnf("list %s encoders: %v", f.transcodeApp, err)
-			return
-		}
-		f.videoCodecArgs = h264EncoderArgs(string(out))
-		logrus.Infof("video preview encoder args: %v", f.videoCodecArgs)
-	})
+	f.videoCodecMu.Lock()
+	defer f.videoCodecMu.Unlock()
+	if f.videoCodecKnown || time.Now().Before(f.videoCodecRetryAt) {
+		return f.videoCodecArgs
+	}
+	out, err := cmd.Run(f.transcodeApp, "-hide_banner", "-encoders")
+	if err != nil {
+		logrus.Warnf("list %s encoders: %v", f.transcodeApp, err)
+		f.videoCodecRetryAt = time.Now().Add(videoCodecRetry)
+		return nil
+	}
+	f.videoCodecArgs = h264EncoderArgs(string(out))
+	f.videoCodecKnown = true
+	logrus.Infof("video preview encoder args: %v", f.videoCodecArgs)
 	return f.videoCodecArgs
 }
 

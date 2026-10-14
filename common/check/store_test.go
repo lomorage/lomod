@@ -478,6 +478,38 @@ func (s *storeSuite) TestLibraryDeletedFromPresentDiskIsMissingAndRepairable(c *
 	c.Assert(err, IsNil)
 }
 
+// The disk went away while the re-upload was coming in: nothing is created on the empty mount
+// point, which would otherwise make the disk look present from then on.
+func (s *storeSuite) TestRestoreRefusesWhenTheDiskWentAway(c *C) {
+	_, hash, file := s.addAsset(c, "jpg")
+	c.Assert(os.Remove(file), IsNil)
+	r := s.lookupRepair(c, hash)
+	c.Assert(r.Missing(), Equals, true)
+
+	c.Assert(os.RemoveAll(s.homeDir), IsNil) // unplugged
+	c.Assert(os.MkdirAll(s.homeDir, common.DefaultFolderPermission), IsNil) // its empty mount point
+	upload := filepath.Join(s.dir, "reupload.jpg")
+	c.Assert(ioutil.WriteFile(upload, []byte("asset 1"), 0644), IsNil)
+	_, err := r.Restore(upload, "", common.DefaultFolderPermission)
+	c.Assert(err, NotNil)
+	entries, err := ioutil.ReadDir(s.homeDir)
+	c.Assert(err, IsNil)
+	c.Assert(entries, HasLen, 0)
+}
+
+// Without the disk id, a day folder may be made, but only inside a library folder that exists.
+func (s *storeSuite) TestRestoreMakesDayFoldersInsideTheLibrary(c *C) {
+	_, hash, file := s.addAsset(c, "jpg")
+	c.Assert(os.RemoveAll(filepath.Dir(filepath.Dir(file))), IsNil) // the month folder
+	r := s.lookupRepair(c, hash)
+	upload := filepath.Join(s.dir, "reupload.jpg")
+	c.Assert(ioutil.WriteFile(upload, []byte("asset 1"), 0644), IsNil)
+	_, err := r.Restore(upload, "", common.DefaultFolderPermission)
+	c.Assert(err, IsNil)
+	_, err = os.Stat(file)
+	c.Assert(err, IsNil)
+}
+
 func (s *storeSuite) writeDiskID(c *C) {
 	dir := filepath.Join(s.homeDir, common.HiddenLomoDir)
 	c.Assert(os.MkdirAll(dir, common.DefaultFolderPermission), IsNil)
