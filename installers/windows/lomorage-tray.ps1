@@ -237,21 +237,37 @@ function Open-LomodFolder {
         [System.Windows.Forms.MessageBox]::Show("Lomorage is stopped. Start it first.", "Lomorage") | Out-Null
         return
     }
-    Start-WebClient
-    $deadline = (Get-Date).AddSeconds(10)
-    while (-not (Test-Path -LiteralPath $unc) -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 300
-    }
     if (Test-Path -LiteralPath $unc) {
         Start-Process "explorer.exe" -ArgumentList $unc
         return
     }
-    $answer = [System.Windows.Forms.MessageBox]::Show(
-        "Windows couldn't open your photos as a folder (its WebClient service may be turned off).`n`nView them in the browser instead?",
-        "Lomorage",
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Information)
-    if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) { Open-LomodGallery }
+    # WebClient takes a few seconds to come up: wait on a timer, not in a loop, so the tray
+    # menu stays responsive. One wait at a time.
+    if ($script:folderTimer) { return }
+    Start-WebClient
+    $script:folderUnc = $unc
+    $script:folderTicks = 0
+    $script:folderTimer = New-Object System.Windows.Forms.Timer
+    $script:folderTimer.Interval = 500
+    $script:folderTimer.Add_Tick({
+        $script:folderTicks++
+        $reachable = Test-Path -LiteralPath $script:folderUnc
+        if (-not $reachable -and $script:folderTicks -lt 20) { return }
+        $script:folderTimer.Stop()
+        $script:folderTimer.Dispose()
+        $script:folderTimer = $null
+        if ($reachable) {
+            Start-Process "explorer.exe" -ArgumentList $script:folderUnc
+            return
+        }
+        $answer = [System.Windows.Forms.MessageBox]::Show(
+            "Windows couldn't open your photos as a folder (its WebClient service may be turned off).`n`nView them in the browser instead?",
+            "Lomorage",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Information)
+        if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) { Open-LomodGallery }
+    })
+    $script:folderTimer.Start()
 }
 
 function Get-LomodBaseDir {
@@ -418,6 +434,7 @@ $menu.add_Opening({
 # updater, lomorage-stop.bat). The timer ticks every second for Request-StatusRefresh and a
 # manual update check; Get-Process only runs every fifth tick otherwise.
 $script:shownRunning = $null
+$script:folderTimer = $null
 $script:statusRefreshRequested = $false
 $script:statusTicks = 0
 $statusTimer = New-Object System.Windows.Forms.Timer
