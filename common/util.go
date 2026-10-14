@@ -174,6 +174,20 @@ func GetUserConfDir(basedir, username string) string {
 	return filepath.Join(filepath.Join(basedir, username), HiddenLomoDir)
 }
 
+// LibraryDiskPresent reports whether the disk holding a user's library is there: the user's
+// .lomo folder (made on that disk once the library is set up, it holds the disk's id and the DB
+// backups) or the library folder exists. With neither, the disk is unplugged or not mounted:
+// nothing can be said about the files on it, and nothing must be written to the empty mount
+// point. With .lomo but no library folder, the library was deleted from a disk that is there.
+func LibraryDiskPresent(homeDir string) bool {
+	for _, p := range []string{filepath.Join(homeDir, HiddenLomoDir), filepath.Join(homeDir, AppPhoto, AppPhotoMasterDir)} {
+		if ok, err := IsFileExist(p); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
 // GetUserBackupDBDir returns db backup directory for given user
 func GetUserBackupDBDir(homeDir string) string {
 	return filepath.Join(filepath.Join(homeDir, HiddenLomoDir), DBBackupDir)

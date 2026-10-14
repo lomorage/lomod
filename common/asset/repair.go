@@ -71,11 +71,10 @@ func LookupRepair(ctx context.Context, tx *sql.Tx, userid int, hash string) (*Re
 }
 
 // Missing reports whether the asset's file (for a live photo: the video or its still image) is
-// gone or empty. A missing library root means the disk isn't there right now, not that the file
-// is lost, so that is never "missing": an upload must not refill an empty mount point.
+// gone or empty. Never while the library's disk isn't there (common.LibraryDiskPresent): that
+// doesn't mean the file is lost, and an upload must not refill an empty mount point.
 func (r *Repair) Missing() bool {
-	master, _ := common.GetUserPhotoDir(r.homeDir)
-	if ok, err := common.IsFileExist(master); err != nil || !ok {
+	if !common.LibraryDiskPresent(r.homeDir) {
 		return false
 	}
 	if !nonEmptyFile(r.MasterFile) {

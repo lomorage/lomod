@@ -455,3 +455,35 @@ func (s *storeSuite) TestRepairLivePhoto(c *C) {
 	c.Assert(strings.HasSuffix(previewSrc, "_image.heic"), Equals, true, Commentf(previewSrc))
 	c.Assert(r.Missing(), Equals, false)
 }
+
+// The library folder deleted from a disk that's still there (its .lomo folder is): the files are
+// really missing, and uploading them again puts them back, folders and all.
+func (s *storeSuite) TestLibraryDeletedFromPresentDiskIsMissingAndRepairable(c *C) {
+	_, hash, file := s.addAsset(c, "jpg")
+	c.Assert(os.MkdirAll(filepath.Join(s.homeDir, common.HiddenLomoDir), common.DefaultFolderPermission), IsNil)
+	c.Assert(os.RemoveAll(filepath.Join(s.homeDir, common.AppPhoto, common.AppPhotoMasterDir)), IsNil)
+
+	results, _ := s.verify(c, hash)
+	c.Assert(results[0].Status, Equals, VerifyFileMissing)
+	r := s.lookupRepair(c, hash)
+	c.Assert(r.Missing(), Equals, true)
+
+	upload := filepath.Join(s.dir, "reupload.jpg")
+	c.Assert(ioutil.WriteFile(upload, []byte("asset 1"), 0644), IsNil)
+	_, err := r.Restore(upload, "", common.DefaultFolderPermission)
+	c.Assert(err, IsNil)
+	results, _ = s.verify(c, hash)
+	c.Assert(results[0].Status, Equals, VerifyOK)
+	_, err = os.Stat(file)
+	c.Assert(err, IsNil)
+}
+
+// Neither .lomo nor the library folder: the disk isn't there, so nothing is "missing" and
+// nothing may be written.
+func (s *storeSuite) TestNoLomoDirAndNoLibraryIsUnavailable(c *C) {
+	_, hash, _ := s.addAsset(c, "jpg")
+	c.Assert(os.RemoveAll(filepath.Join(s.homeDir, common.AppPhoto, common.AppPhotoMasterDir)), IsNil)
+	results, _ := s.verify(c, hash)
+	c.Assert(results[0].Status, Equals, VerifyUnavailable)
+	c.Assert(s.lookupRepair(c, hash).Missing(), Equals, false)
+}
