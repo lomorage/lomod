@@ -13,12 +13,16 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"crypto/sha256"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/webdav"
@@ -43,6 +47,110 @@ var knownOSFiles map[string]struct{} = map[string]struct{}{
 type srv struct {
 	h *webdav.Handler
 	lomodHandler *Handler
+
+	// verify checks a username and plain-text password (user.VerifyPassword against the DB).
+	verify func(username, password string) bool
+
+	authMu    sync.Mutex
+	authCache map[[sha256.Size]byte]authEntry // hash(user, password) -> who and until when
+}
+
+type authEntry struct {
+	username string
+	expires  time.Time
+}
+
+// webdavAuthTTL: WebDAV clients send credentials on every request, and checking a password
+// costs an argon2 hash (tens of ms on a small NAS), so a verified pair is remembered briefly.
+const webdavAuthTTL = 10 * time.Minute
+
+// webdavUserKey carries the signed-in user of a remote request down to the file system, which
+// then only lists that user. Local requests carry none and see every user, as before.
+type webdavUserKey struct{}
+
+func webdavUser(ctx context.Context) string {
+	u, _ := ctx.Value(webdavUserKey{}).(string)
+	return u
+}
+
+func isLoopbackAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// authenticate returns the user a remote request signed in as with HTTP Basic auth.
+func (s *srv) authenticate(r *http.Request) (string, bool) {
+	username, password, ok := r.BasicAuth()
+	if !ok || username == "" {
+		return "", false
+	}
+	key := sha256.Sum256([]byte(username + string(rune(0)) + password))
+	now := time.Now()
+	s.authMu.Lock()
+	if e, ok := s.authCache[key]; ok && now.Before(e.expires) {
+		s.authMu.Unlock()
+		return e.username, true
+	}
+	s.authMu.Unlock()
+
+	if !s.verify(username, password) {
+		return "", false
+	}
+	s.authMu.Lock()
+	if s.authCache == nil {
+		s.authCache = map[[sha256.Size]byte]authEntry{}
+	}
+	for k, e := range s.authCache { // keep the cache small
+		if now.After(e.expires) {
+			delete(s.authCache, k)
+		}
+	}
+	s.authCache[key] = authEntry{username: username, expires: now.Add(webdavAuthTTL)}
+	s.authMu.Unlock()
+	return username, true
+}
+
+// remotePathAllowed: a remote user may see the root (which then lists only them) and their own
+// folder, never another user's.
+func remotePathAllowed(urlPath, username string) bool {
+	p := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+	first := strings.SplitN(p, "/", 2)[0]
+	return first == "" || first == username
+}
+
+// gate decides who may use the WebDAV view. Same computer: no sign-in (the OS user can already
+// read the library folder, and Windows Explorer won't send Basic auth over plain HTTP anyway).
+// From anywhere else on the network: sign in with a Lomorage account and see only your own
+// photos. It writes the refusal itself and returns false; otherwise the request to serve.
+func (s *srv) gate(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	if isLoopbackAddr(r.RemoteAddr) {
+		return r, true
+	}
+	username, ok := s.authenticate(r)
+	if !ok {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Lomorage", charset="UTF-8"`)
+		http.Error(w, "Sign in with your Lomorage account", http.StatusUnauthorized)
+		return r, false
+	}
+	if !remotePathAllowed(r.URL.Path, username) ||
+		(r.Header.Get("Destination") != "" && !remotePathAllowed(destinationPath(r), username)) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return r, false
+	}
+	return r.WithContext(context.WithValue(r.Context(), webdavUserKey{}, username)), true
+}
+
+// destinationPath is the path part of a COPY/MOVE Destination header.
+func destinationPath(r *http.Request) string {
+	d := r.Header.Get("Destination")
+	if u, err := r.URL.Parse(d); err == nil {
+		return u.Path
+	}
+	return d
 }
 
 func mkDateName(n int) string {
@@ -68,6 +176,11 @@ func webdevLogger() func(*http.Request, error) {
 func (s *srv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	s.lomodHandler.accessLogger.LogHTTP(r, "", "", r.URL.Path, "", start, true, false)
+
+	r, ok := s.gate(w, r)
+	if !ok {
+		return
+	}
 
 	l := logger.NewResponseLogger(w)
 	s.h.ServeHTTP(l, r)
@@ -127,8 +240,10 @@ func (m *myFS) buildUserDir(name string) os.FileInfo {
 	return userDir
 }
 
-func (m *myFS) openRoot() (webdav.File, error) {
-	m.rootFile.files = []os.FileInfo{}
+// openRoot lists the users' folders; for a remote request (only != "") just that user's. A
+// filtered listing is a fresh lomoFile so concurrent requests never see each other's view.
+func (m *myFS) openRoot(only string) (webdav.File, error) {
+	files := []os.FileInfo{}
 	err := dbx.InQuery(m.h.db, func(ctx context.Context, tx *sql.Tx) error {
 		//return home dir if request is from localhost
 		users, err := user.ListUsers(ctx, tx)
@@ -140,13 +255,19 @@ func (m *myFS) openRoot() (webdav.File, error) {
 				continue
 			}
 			m.users[u.Name] = u
-			m.rootFile.files = append(m.rootFile.files, m.buildUserDir(u.Name))
+			if only == "" || u.Name == only {
+				files = append(files, m.buildUserDir(u.Name))
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	if only != "" {
+		return &lomoFile{isDir: true, name: m.rootFile.name, files: files}, nil
+	}
+	m.rootFile.files = files
 	return m.rootFile, nil
 }
 
@@ -678,11 +799,11 @@ func (m *myFS) handleOpenFileAlbum(parts []string) (webdav.File, error) {
 func (m *myFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (f webdav.File, e error) {
 	//fmt.Printf("---- OpenFile: %s, flag: %d, perm: %s\n", name, flag, perm)
 	if name == "/" {
-		return m.openRoot()
+		return m.openRoot(webdavUser(ctx))
 	}
 	parts := strings.Split(strings.TrimPrefix(strings.TrimSuffix(name, "/"), "/"), "/")
 	if len(parts) == 0 {
-		return m.openRoot()
+		return m.openRoot(webdavUser(ctx))
 	}
 	if strings.HasPrefix(parts[len(parts) - 1], ".") {
 		return nil, errors.Wrapf(common.ErrNotImplementedFormat, "OpenFiles %s", name)

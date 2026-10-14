@@ -549,6 +549,7 @@ func (h *Handler) StartWebdevListener() {
 	h.webdavFS = newMyFS(h)
 	s := &srv{
 		lomodHandler: h,
+		verify:       h.verifyPassword,
 		h: &webdav.Handler{
 			Prefix:     "",
 			FileSystem: h.webdavFS,
@@ -560,6 +561,18 @@ func (h *Handler) StartWebdevListener() {
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.conf.ListenPortWebdev), s); err != nil {
 		logrus.Warnf("webdev serve: %s", err)
 	}
+}
+
+// verifyPassword checks a plain-text password against the user's account (WebDAV Basic auth).
+func (h *Handler) verifyPassword(username, password string) bool {
+	err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := user.VerifyPassword(ctx, tx, username, password)
+		return err
+	})
+	if err != nil && err != common.ErrInvalidPasswd {
+		logrus.Warnf("webdav sign-in for %s: %v", username, err)
+	}
+	return err == nil
 }
 
 // CreateRouter associates handler with URL endpoints.
