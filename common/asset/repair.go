@@ -71,10 +71,10 @@ func LookupRepair(ctx context.Context, tx *sql.Tx, userid int, hash string) (*Re
 }
 
 // Missing reports whether the asset's file (for a live photo: the video or its still image) is
-// gone or empty. Never while the library's disk isn't there (common.LibraryDiskPresent): that
-// doesn't mean the file is lost, and an upload must not refill an empty mount point.
+// gone or empty. Never while the library's disk isn't there (LibraryDiskPresent): that doesn't
+// mean the file is lost, and an upload must not refill an empty mount point.
 func (r *Repair) Missing() bool {
-	if !common.LibraryDiskPresent(r.homeDir) {
+	if !LibraryDiskPresent(r.homeDir) {
 		return false
 	}
 	if !nonEmptyFile(r.MasterFile) {
@@ -113,6 +113,25 @@ func (r *Repair) Restore(srcFile, srcImgFile string, folderPerm os.FileMode) (st
 	}
 	logrus.Infof("restored missing file of asset %d: %s", r.AssetID, r.MasterFile)
 	return previewSrc, nil
+}
+
+// LibraryDiskPresent reports whether the disk holding a user's library is there: its disk id
+// file (.lomo/disk_uuid) or the library folder exists. With neither, the disk is unplugged or not
+// mounted: nothing can be said about the files on it, and nothing must be written to the empty
+// mount point. With the id file but no library folder, the library was deleted from a disk that
+// is there, and uploads may put it back.
+//
+// Not the .lomo folder itself: the DB backup (handler/replicate.go) writes under it and creates
+// it as needed, so on an empty mount point it would reappear on the system disk. lomod writes
+// disk_uuid only after finding the user's Photos folder on the disk (handler migrateMntUUID).
+func LibraryDiskPresent(homeDir string) bool {
+	return nonEmptyFile(filepath.Join(homeDir, common.HiddenLomoDir, types.UUIDFilename)) ||
+		isDir(filepath.Join(homeDir, common.AppPhoto, common.AppPhotoMasterDir))
+}
+
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 func nonEmptyFile(p string) bool {

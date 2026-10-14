@@ -242,7 +242,7 @@ func LookupAssets(ctx context.Context, tx *sql.Tx, userID int, hashes []string) 
 // is closed: it stats files.
 func (l *VerifyLookup) Check() []AssetVerify {
 	results := make([]AssetVerify, len(l.assets))
-	if !common.LibraryDiskPresent(l.homeDir) {
+	if !asset.LibraryDiskPresent(l.homeDir) {
 		// disk not mounted: nothing can be confirmed, but nothing is known lost
 		for i, a := range l.assets {
 			results[i] = AssetVerify{Hash: a.hash, Status: VerifyUnavailable}

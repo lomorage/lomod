@@ -460,7 +460,7 @@ func (s *storeSuite) TestRepairLivePhoto(c *C) {
 // really missing, and uploading them again puts them back, folders and all.
 func (s *storeSuite) TestLibraryDeletedFromPresentDiskIsMissingAndRepairable(c *C) {
 	_, hash, file := s.addAsset(c, "jpg")
-	c.Assert(os.MkdirAll(filepath.Join(s.homeDir, common.HiddenLomoDir), common.DefaultFolderPermission), IsNil)
+	s.writeDiskID(c)
 	c.Assert(os.RemoveAll(filepath.Join(s.homeDir, common.AppPhoto, common.AppPhotoMasterDir)), IsNil)
 
 	results, _ := s.verify(c, hash)
@@ -478,11 +478,28 @@ func (s *storeSuite) TestLibraryDeletedFromPresentDiskIsMissingAndRepairable(c *
 	c.Assert(err, IsNil)
 }
 
-// Neither .lomo nor the library folder: the disk isn't there, so nothing is "missing" and
+func (s *storeSuite) writeDiskID(c *C) {
+	dir := filepath.Join(s.homeDir, common.HiddenLomoDir)
+	c.Assert(os.MkdirAll(dir, common.DefaultFolderPermission), IsNil)
+	c.Assert(ioutil.WriteFile(filepath.Join(dir, types.UUIDFilename), []byte("local:1234"), 0644), IsNil)
+}
+
+// Neither the disk id nor the library folder: the disk isn't there, so nothing is "missing" and
 // nothing may be written.
-func (s *storeSuite) TestNoLomoDirAndNoLibraryIsUnavailable(c *C) {
+func (s *storeSuite) TestNoDiskIDAndNoLibraryIsUnavailable(c *C) {
 	_, hash, _ := s.addAsset(c, "jpg")
 	c.Assert(os.RemoveAll(filepath.Join(s.homeDir, common.AppPhoto, common.AppPhotoMasterDir)), IsNil)
+	results, _ := s.verify(c, hash)
+	c.Assert(results[0].Status, Equals, VerifyUnavailable)
+	c.Assert(s.lookupRepair(c, hash).Missing(), Equals, false)
+}
+
+// An unplugged disk's empty mount point where the DB backup has since recreated .lomo (it
+// creates its folders as needed): still not the disk, so still unavailable.
+func (s *storeSuite) TestDBBackupFolderOnAnEmptyMountPointIsNotTheDisk(c *C) {
+	_, hash, _ := s.addAsset(c, "jpg")
+	c.Assert(os.RemoveAll(filepath.Join(s.homeDir, common.AppPhoto)), IsNil)
+	c.Assert(os.MkdirAll(filepath.Join(s.homeDir, common.HiddenLomoDir, "db-backup", "generations"), common.DefaultFolderPermission), IsNil)
 	results, _ := s.verify(c, hash)
 	c.Assert(results[0].Status, Equals, VerifyUnavailable)
 	c.Assert(s.lookupRepair(c, hash).Missing(), Equals, false)
