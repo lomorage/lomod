@@ -141,6 +141,23 @@ func GetScanImportLogFilename(logDir, importDir string) string {
 	return filepath.Join(logDir, "import"+name+".log")
 }
 
+// HideInternalDirs hides lomod's own folders in the base dir (settings, database, logs), so
+// opening it in a file manager shows just the users' photo folders. Only Windows has a hidden
+// attribute; elsewhere this does nothing. The samba "home" folder is hidden only while empty,
+// in case someone keeps photos there.
+func HideInternalDirs(basedir string) {
+	for _, sub := range []string{binSubDir, docSubDir, etcSubDir, varSubDir, userSubDir} {
+		p := filepath.Join(basedir, sub)
+		entries, err := os.ReadDir(p)
+		if err != nil || (sub == userSubDir && len(entries) > 0) {
+			continue
+		}
+		if _, err := MkHideDir(p, 0); err != nil {
+			logrus.Debugf("hide %s: %v", p, err)
+		}
+	}
+}
+
 // GetSambaUserDir returns samba user directory
 // TODO: support windows.
 func GetSambaUserDir(basedir string) string {

@@ -468,6 +468,7 @@ func NewHandler(ctx context.Context, c *Config) (*Handler, error) {
 		h.StartWebdevListener()
 	}()
 
+	common.HideInternalDirs(h.conf.BaseDir)
 	return h, nil
 }
 
