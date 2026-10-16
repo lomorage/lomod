@@ -175,6 +175,11 @@ preflight() {
   # Copies installers/{windows,macos} into homepage and runs its tests now, before anything is
   # published, so a failure stops the release here; the last step commits the result with
   # release.json.
+  # The last step pushes homepage's local master, so the release commit must land on it: with
+  # another branch checked out the commit stays there and the push is rejected, after the
+  # binaries are already published.
+  HP_BRANCH="$(git -C "$HOMEPAGE" rev-parse --abbrev-ref HEAD)"
+  [ "$HP_BRANCH" = master ] || die "homepage checkout is on '$HP_BRANCH', not master; check out master first ($HOMEPAGE)"
   bash "$REPO/scripts/sync-installers-to-homepage.sh"
 }
 
