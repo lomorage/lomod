@@ -54,8 +54,11 @@ bash rpm/package-vips-generic.sh lomo-vips-rocky9-build rockylinux:9 \
 bash rpm/package-rocky9.sh
 
 # --- RPM: openSUSE Leap ---
+# Pinned, not :latest: upstream slid that tag from 15.x to 16.0, silently changing which release
+# our RPMs target. The same tag is in rpm/Dockerfile.opensuse-vips-build and rpm/package-opensuse.sh,
+# and all three must agree -- lomo-vips and lomod have to be built against the same Leap.
 build_image_if_missing lomo-vips-opensuse-build rpm/Dockerfile.opensuse-vips-build rpm
-bash rpm/package-vips-generic.sh lomo-vips-opensuse-build opensuse/leap:latest \
+bash rpm/package-vips-generic.sh lomo-vips-opensuse-build opensuse/leap:16.0 \
   lomo-vips_8.12.2_opensuse_amd64.rpm \
   "sqlite3, libblkid1, util-linux"
 bash rpm/package-opensuse.sh

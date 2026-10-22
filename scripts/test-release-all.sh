@@ -6,6 +6,7 @@
 #   3. publish_homepage against a throwaway homepage repo + bare "origin" in WSL: a plain push;
 #      a push after origin moved on another key (rebased and pushed, local edits kept); and a
 #      real conflict on the same key (stops, local commit kept, origin untouched).
+#   4. assert_wsl_builds_commit: the preflight guard that WSL is on the commit being released.
 #
 # Run from native Windows git-bash: bash scripts/test-release-all.sh
 set -uo pipefail
@@ -110,6 +111,24 @@ check 'grep -q "rebase conflicts" "$REPO/.test-release-all.out"' "says the rebas
 check '[ "$(origin_log | head -1)" = "Release windows-cli w-other" ]' "origin left as the other release made it"
 check '[ "$(inwsl "git -C $sandbox/homepage log -1 --format=%s" | tr -d "\r")" = "Release windows-cli w4" ]' "local commit kept for resolving by hand"
 check '! inwsl "test -d $sandbox/homepage/.git/rebase-merge -o -d $sandbox/homepage/.git/rebase-apply"' "no rebase left in progress"
+
+echo "==> 4. WSL builds the commit being released"
+# The incident this guards: REPO_WSL named a retired checkout, so preflight vetted one tree
+# and WSL built another. Nothing above would have noticed.
+wslsees() {
+  (
+    source "$REPO/scripts/release-all.sh"
+    REPO_WSL="$1"
+    assert_wsl_builds_commit "$2"
+  ) 2>&1
+}
+head_sha="$(git -C "$REPO" rev-parse HEAD)"
+out="$(wslsees "$REPO_WSL_PATH" "$head_sha")"; rc=$?
+check '[ $rc -eq 0 ]' "passes when WSL is on this checkout at the released commit"
+out="$(wslsees "$REPO_WSL_PATH" 0000000000000000000000000000000000000000)"; rc=$?
+check '[ $rc -ne 0 ] && [[ "$out" == *"$head_sha"* ]]' "refuses a checkout sitting on another commit, and says which"
+out="$(wslsees "$sandbox/not-a-checkout" "$head_sha")"; rc=$?
+check '[ $rc -ne 0 ] && [[ "$out" == *"no git checkout there"* ]]' "refuses a REPO_WSL that is not a git checkout"
 
 inwsl "rm -rf '$sandbox'"
 rm -f "$REPO/.test-release-all.out"

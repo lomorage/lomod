@@ -5,5 +5,5 @@
 # instead of a system vips package.
 set -ex
 cd "$(dirname "${BASH_SOURCE[0]}")"
-bash package-generic.sh opensuse/leap:latest suse \
+bash package-generic.sh opensuse/leap:16.0 suse \
   "lomo-vips, sqlite3, zip, exiftool, ffmpeg, rsync, libblkid1, util-linux"
