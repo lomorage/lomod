@@ -54,8 +54,10 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOMEPAGE="${HOMEPAGE_DIR:-$REPO/../homepage}"
 GH_RELEASES_REPO="lomosw/lomosw.github.io"
-# The same checkouts as seen from WSL (Windows host only).
-REPO_WSL="${REPO_WSL:-/mnt/c/Users/fuji2/Work/lomo-backend}"
+# The same checkouts as seen from WSL (Windows host only). REPO_WSL is derived from REPO, not
+# named outright: it pointed at the retired Work/lomo-backend tree until 2026-10-22 and published
+# a release built from it. assert_wsl_builds_commit below is what now catches that.
+REPO_WSL="${REPO_WSL:-/mnt$REPO}"
 LOMOWARE_SITE_WSL="${LOMOWARE_SITE_WSL:-/mnt/c/Users/fuji2/Work/lomoware.github.io}"
 HOMEPAGE_WSL="${HOMEPAGE_WSL:-/mnt/c/Users/fuji2/Work/homepage}"
 LOMO_DOCKER_WSL="${LOMO_DOCKER_WSL:-/mnt/c/Users/fuji2/Work/lomo-docker}"
@@ -130,6 +132,18 @@ SUMMARY=()
 
 # --- Preflight ------------------------------------------------------------------------------
 
+# The Linux and Docker artifacts are built inside WSL, from REPO_WSL, while every other check
+# here runs against REPO -- so if WSL is looking at a different tree, none of them mean anything.
+# Deliberately outside SKIP_CI_CHECK: that is for releasing past a red CI, not for releasing code
+# nobody has seen.
+assert_wsl_builds_commit() {
+  local want="$1" got
+  # || true: with no checkout there git exits nonzero, and under set -e/pipefail that would
+  # abort with no message at all instead of the one below.
+  got="$(wsl -d Ubuntu -e bash -lc "git -C '$REPO_WSL' rev-parse HEAD 2>/dev/null" | tr -d '\r' || true)"
+  [ "$got" = "$want" ] || die "WSL would build from $REPO_WSL, which is at ${got:-no git checkout there}, not the $want being released. Point REPO_WSL at this checkout as WSL sees it."
+}
+
 preflight() {
   log "Preflight checks"
   command -v gh >/dev/null || die "gh CLI not found on PATH"
@@ -170,6 +184,9 @@ preflight() {
       --json status,conclusion --jq 'map("\(.status)/\(.conclusion)") | if length == 0 then "no run" elif any(. == "completed/success") then "passed" else .[0] end')"
     [ "$CI_STATE" = passed ] || die "CI for $HEAD_SHA: $CI_STATE (see https://github.com/lomorage/lomod/actions). Not releasing."
     echo "CI passed for $HEAD_SHA"
+  fi
+  if [ $DO_LINUX = 1 ] || [ $DO_DOCKER = 1 ]; then
+    assert_wsl_builds_commit "$HEAD_SHA"
   fi
   COMMIT="$(git -C "$REPO" rev-parse --short=7 HEAD)"
   # Copies installers/{windows,macos} into homepage and runs its tests now, before anything is
