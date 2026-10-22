@@ -3,7 +3,7 @@
 # lomo-vips won't run here, the library SONAMEs don't match. orc isn't
 # packaged for openSUSE Leap at all; it's an optional performance dep in
 # vips's configure script, not a hard requirement, so it's just omitted.
-FROM opensuse/leap:latest
+FROM opensuse/leap:16.0
 
 RUN zypper --non-interactive refresh && \
     zypper --non-interactive install -y \
