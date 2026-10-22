@@ -108,6 +108,12 @@ func (f *ffmpeg) XcodeVideoToVideo(ctx context.Context, assetpath, previewpath s
 	if err := common.RetryIfKnownError(fmt.Sprintf("while generating %s for video %s with size %dx%d", filter, previewpath, imgWidth, imgHeight), func() error {
 		args := []string{"-i", assetpath, "-y", "-threads", "1", "-r", "24", "-max_muxing_queue_size", "99999", "-vf", filter}
 		args = append(args, f.videoCodec()...)
+		// Move moov ahead of mdat so a player knows the duration from the first bytes, rather
+		// than range-requesting the tail first -- or failing outright where it cannot range
+		// request at all. The preview is always .mp4 (ext.MkPreviewVideoAssetName), so the mp4
+		// muxer always accepts this. The cost is a second pass over the finished file, i.e. the
+		// preview is written roughly twice; at 480p that is cheap next to a round trip per play.
+		args = append(args, "-movflags", "+faststart")
 		return cmd.ExecLowPriorityContext(ctx, f.transcodeApp, append(args, tmpfile)...)
 	}); err != nil {
 		return err

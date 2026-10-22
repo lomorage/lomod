@@ -212,12 +212,18 @@ func (h *Handler) saveAsset(w http.ResponseWriter, r *http.Request, savedAsset *
 
 		maker := exifTags.GetMake()
 		if maker == "" {
-			logrus.Errorf("failed to get asset %s's make: %v", a.Name, exifTags.RawTags)
+			// Plenty of ordinary assets simply carry no Make tag (screenshots, edited exports,
+			// anything stripped of EXIF), so this is not an error -- it only means there's no
+			// camera to associate. Keep the raw tags for debugging, but off the normal log.
+			logrus.Debugf("asset %s has no exif make tag: %v", a.Name, exifTags.RawTags)
 			return nil
 		}
 		model := exifTags.GetModel()
 		if model == "" {
-			logrus.Warnf("asset %s's camera model is empty: %v", a.Name, exifTags.RawTags)
+			// Same as the missing Make above, and even less noteworthy: the association below
+			// proceeds normally with an empty model, so nothing is lost and there is nothing
+			// for an operator to act on.
+			logrus.Debugf("asset %s has no exif model tag: %v", a.Name, exifTags.RawTags)
 		}
 		makeID, err := exif.InsertOrGetCameraMakeID(ctx, tx, maker, model)
 		if err != nil {
