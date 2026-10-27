@@ -93,15 +93,21 @@ func onlyFile(t *testing.T, dir string) string {
 	return names[0]
 }
 
+func resetHEIFSupport() {
+	for c := range heifSupport.decoder {
+		heifSupport.decoder[c] = heifUntried
+	}
+}
+
 func newTestRunner(engine avutil.Engine) *Runner {
-	heifSupport.decoder = heifUntried // each test starts as a fresh lomod would
+	resetHEIFSupport() // each test starts as a fresh lomod would
 	r := NewRunner(context.Background(), "", "", "", 0755, nil, nil, 1, nil)
 	r.avengine = engine
 	return r
 }
 
 func TestThumbnailFallsBackToDecoderForHEIC(t *testing.T) {
-	for _, name := range []string{"IMG_0001.heic", "IMG_0002.HEIF", "live_image.heic"} {
+	for _, name := range []string{"IMG_0001.heic", "IMG_0002.HEIF", "live_image.heic", "IMG_0003.avif"} {
 		t.Run(name, func(t *testing.T) {
 			src := notAnImage(t, t.TempDir(), name)
 			outDir := t.TempDir()
@@ -179,7 +185,8 @@ func TestThumbnailFallbackDecoderFailure(t *testing.T) {
 func TestNeedsDecodeFallback(t *testing.T) {
 	for path, want := range map[string]bool{
 		"a.heic": true, "b.HEIC": true, "c.heif": true, "d_image.heic": true,
-		"e.jpg": false, "f.avif": false, "g.png": false, "h": false,
+		"f.avif": true, "i.AVIF": true,
+		"e.jpg": false, "g.png": false, "h": false,
 	} {
 		if got := NeedsDecodeFallback(path); got != want {
 			t.Errorf("NeedsDecodeFallback(%q) = %v, want %v", path, got, want)
@@ -228,8 +235,9 @@ func TestHEIFSupportIsRemembered(t *testing.T) {
 	if len(engine.decoded) != 1 {
 		t.Fatalf("decoder calls = %v, want one fallback for this file", engine.decoded)
 	}
-	if heifSupport.decoder != heifUntried {
-		t.Fatalf("decoder = %v, want heifUntried after a file-specific vips failure", heifSupport.decoder)
+	if heifSupport.decoder[codecHEVC] != heifUntried {
+		t.Fatalf("decoder = %v, want heifUntried after a file-specific vips failure",
+			heifSupport.decoder[codecHEVC])
 	}
 
 	// vips reads it (a JPEG named .heic): the decoder isn't used, and one success
@@ -247,21 +255,22 @@ func TestHEIFSupportIsRemembered(t *testing.T) {
 	if err := r.generatePreviewWebp(src, filepath.Join(t.TempDir(), "p.webp"), 32, 0); err != nil {
 		t.Fatal(err)
 	}
-	if heifSupport.decoder != heifUntried || len(engine.decoded) != 0 {
-		t.Fatalf("decoder = %v, decode calls %v; want heifUntried and none", heifSupport.decoder, engine.decoded)
+	if heifSupport.decoder[codecHEVC] != heifUntried || len(engine.decoded) != 0 {
+		t.Fatalf("decoder = %v, decode calls %v; want heifUntried and none",
+			heifSupport.decoder[codecHEVC], engine.decoded)
 	}
 
 	// a decoder failure leaves it undecided (a broken file says nothing about vips)
 	r = newTestRunner(&fakeEngine{err: errors.New("bad file")})
 	_ = r.generatePreviewWebp(notAnImage(t, t.TempDir(), "c.heic"), filepath.Join(t.TempDir(), "p.webp"), 32, 0)
-	if heifSupport.decoder != heifUntried {
-		t.Fatalf("decoder = %v, want heifUntried", heifSupport.decoder)
+	if heifSupport.decoder[codecHEVC] != heifUntried {
+		t.Fatalf("decoder = %v, want heifUntried", heifSupport.decoder[codecHEVC])
 	}
 }
 
 func TestMissingDecoderLatchesFallback(t *testing.T) {
-	defer func() { heifSupport.decoder = heifUntried }()
-	heifSupport.decoder = heifUntried
+	defer resetHEIFSupport()
+	resetHEIFSupport()
 	src := filepath.Join(t.TempDir(), "a.heic")
 	dst := filepath.Join(t.TempDir(), "p.jpg")
 	vipsCalls := 0
@@ -277,8 +286,9 @@ func TestMissingDecoderLatchesFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if vipsCalls != 1 || heifSupport.decoder != heifByFallback {
-		t.Fatalf("vips calls %d, decoder %v; want 1 and heifByFallback", vipsCalls, heifSupport.decoder)
+	if vipsCalls != 1 || heifSupport.decoder[codecHEVC] != heifByFallback {
+		t.Fatalf("vips calls %d, decoder %v; want 1 and heifByFallback",
+			vipsCalls, heifSupport.decoder[codecHEVC])
 	}
 
 	err = WithDecodeFallback(src, filepath.Join(t.TempDir(), "q.jpg"),
@@ -294,17 +304,89 @@ func TestMissingDecoderLatchesFallback(t *testing.T) {
 	}
 }
 
+// A libheif build decodes HEVC and AV1 independently: Windows libvips has AV1 but not
+// HEVC, the libheif on the devices has HEVC but is too old for AV1. One missing decoder
+// must not route the other codec through ffmpeg.
+func TestMissingDecoderLatchesOnlyItsOwnCodec(t *testing.T) {
+	defer resetHEIFSupport()
+
+	for _, tc := range []struct {
+		name         string
+		missing      string // the file whose codec libvips can't decode
+		other        string // the other codec, which it decodes fine
+		latched      heifCodec
+		stillUntried heifCodec
+	}{
+		{"AV1 missing", "a.avif", "b.heic", codecAV1, codecHEVC},
+		{"HEVC missing", "c.heic", "d.avif", codecHEVC, codecAV1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetHEIFSupport()
+			missing := filepath.Join(t.TempDir(), tc.missing)
+			decode := func(_, out string) error { return writePPM(out, 8, 8) }
+
+			if err := WithDecodeFallback(missing, filepath.Join(t.TempDir(), "p.jpg"), decode,
+				func(path string) error {
+					if path == missing {
+						return errors.New("heif: Unsupported feature: Unsupported codec (4.3000)")
+					}
+					return nil
+				}); err != nil {
+				t.Fatal(err)
+			}
+			if heifSupport.decoder[tc.latched] != heifByFallback {
+				t.Fatalf("%v = %v, want heifByFallback", tc.latched, heifSupport.decoder[tc.latched])
+			}
+			if heifSupport.decoder[tc.stillUntried] != heifUntried {
+				t.Fatalf("%v = %v, want heifUntried: the other codec says nothing about it",
+					tc.stillUntried, heifSupport.decoder[tc.stillUntried])
+			}
+
+			// the other codec still goes to vips, and ffmpeg is not used for it
+			other := filepath.Join(t.TempDir(), tc.other)
+			vipsCalls := 0
+			if err := WithDecodeFallback(other, filepath.Join(t.TempDir(), "q.jpg"),
+				func(_, _ string) error {
+					t.Fatal("decoded a codec libvips reads")
+					return nil
+				},
+				func(path string) error {
+					if path == other {
+						vipsCalls++
+					}
+					return nil
+				}); err != nil {
+				t.Fatal(err)
+			}
+			if vipsCalls != 1 {
+				t.Fatalf("vips calls for %s = %d, want 1", tc.other, vipsCalls)
+			}
+
+			// while the latched codec skips vips from now on
+			if err := WithDecodeFallback(missing, filepath.Join(t.TempDir(), "r.jpg"), decode,
+				func(path string) error {
+					if path == missing {
+						t.Fatal("vips attempt after a missing-decoder latch")
+					}
+					return nil
+				}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestFailedHEIFLoadsStaySerialized(t *testing.T) {
-	defer func() { heifSupport.decoder = heifUntried }()
-	heifSupport.decoder = heifUntried
+	defer resetHEIFSupport()
+	resetHEIFSupport()
 	src := filepath.Join(t.TempDir(), "a.heic")
 	if err := WithDecodeFallback(src, filepath.Join(t.TempDir(), "ok.jpg"),
 		func(_, _ string) error { t.Fatal("decoder used for a vips success"); return nil },
 		func(string) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if heifSupport.decoder != heifUntried {
-		t.Fatalf("decoder = %v after a vips success, want heifUntried", heifSupport.decoder)
+	if heifSupport.decoder[codecHEVC] != heifUntried {
+		t.Fatalf("decoder = %v after a vips success, want heifUntried", heifSupport.decoder[codecHEVC])
 	}
 
 	var mu sync.Mutex

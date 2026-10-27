@@ -455,13 +455,23 @@ func vipsHeightOptions(height uint) []*vips.Option {
 
 // NeedsDecodeFallback reports whether a file vips failed to read should be retried through an
 // external decoder: libvips' Windows builds ship libheif with only the AV1 decoder (no HEVC,
-// for patent reasons), so iPhone HEIC photos can't be decoded by vips there.
+// for patent reasons), so iPhone HEIC photos can't be decoded by vips there, and the libheif
+// Raspbian ships is too old for AV1, so AVIF can't be decoded on the devices.
 func NeedsDecodeFallback(path string) bool {
+	_, ok := heifCodecOf(path)
+	return ok
+}
+
+// heifCodecOf maps a file to the HEIF codec its pixels are coded with, and reports whether
+// it is a HEIF-family file at all.
+func heifCodecOf(path string) (heifCodec, bool) {
 	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
 	case ext.HEICString, ext.HEIFString:
-		return true
+		return codecHEVC, true
+	case ext.AvifString:
+		return codecAV1, true
 	}
-	return false
+	return 0, false
 }
 
 // FirstLine returns err's first line; govips appends a goroutine stack to its errors.
@@ -500,14 +510,48 @@ const (
 	heifByFallback
 )
 
-// heifSupport latches heifByFallback only after libvips reports a missing HEIF decoder
-// and ffmpeg then decodes a file. A file vips can read does not prove the next one will
-// (HEVC on a Windows build), and one ffmpeg success on some other vips error does not
-// prove this build lacks a decoder. Until that latch, vips attempts stay serialized:
-// concurrent failed loads leak the file handle in libvips on Windows until lomod restarts.
+// heifCodec is a codec a HEIF-family file can carry. libheif builds decode them
+// independently -- the Windows libvips has AV1 but not HEVC, the libheif on the devices
+// has HEVC but is too old for AV1 -- so each one latches on its own.
+type heifCodec int
+
+const (
+	codecHEVC heifCodec = iota // .heic, .heif
+	codecAV1                   // .avif
+	heifCodecCount
+)
+
+// heifSupport latches heifByFallback for a codec only after libvips reports that codec's
+// decoder missing and ffmpeg then decodes a file. A file vips can read does not prove the
+// next one will (HEVC on a Windows build), and one ffmpeg success on some other vips error
+// does not prove this build lacks a decoder. Until that latch, vips attempts stay
+// serialized -- concurrent failed loads leak the file handle in libvips on Windows until
+// lomod restarts -- and the lock is shared by both codecs to keep that guarantee.
 var heifSupport struct {
 	sync.Mutex
-	decoder heifDecoder
+	decoder [heifCodecCount]heifDecoder
+}
+
+// String names the codec for logs.
+func (c heifCodec) String() string {
+	switch c {
+	case codecHEVC:
+		return "HEVC"
+	case codecAV1:
+		return "AV1"
+	}
+	return "unknown HEIF codec"
+}
+
+// extensions names the files a codec covers, for logs.
+func (c heifCodec) extensions() string {
+	switch c {
+	case codecHEVC:
+		return "HEIC/HEIF"
+	case codecAV1:
+		return "AVIF"
+	}
+	return "no known extension"
 }
 
 // vipsMissingHEIFDecoder matches the libheif errors a build without a decoder produces
@@ -564,13 +608,15 @@ func WriteAtomically(dst string, write func(tmp string) error) error {
 // attempt must do all the vips work (load and save): vips reads HEIF lazily, so a missing
 // decoder may only show up when saving.
 func WithDecodeFallback(src, dst string, decode func(src, dst string) error, attempt func(path string) error) error {
-	if decode == nil || !NeedsDecodeFallback(src) {
+	codec, isHEIF := heifCodecOf(src)
+	if decode == nil || !isHEIF {
 		return attempt(src)
 	}
 
-	err, skipVips := vipsHEIF(src, attempt)
+	err, skipVips := vipsHEIF(codec, src, attempt)
 	if skipVips {
-		return decodeThenAttempt(src, dst, decode, attempt, errors.New("libvips can't decode HEIF here"))
+		return decodeThenAttempt(src, dst, decode, attempt,
+			errors.Errorf("libvips can't decode %s here", codec))
 	}
 	if err == nil {
 		return nil
@@ -581,9 +627,10 @@ func WithDecodeFallback(src, dst string, decode func(src, dst string) error, att
 	}
 	if vipsMissingHEIFDecoder(err) {
 		heifSupport.Lock()
-		if heifSupport.decoder != heifByFallback {
-			heifSupport.decoder = heifByFallback
-			logrus.Warnf("libvips can't decode HEIF (%s), using ffmpeg for HEIC/HEIF from now on", src)
+		if heifSupport.decoder[codec] != heifByFallback {
+			heifSupport.decoder[codec] = heifByFallback
+			logrus.Warnf("libvips can't decode %s (%s), using ffmpeg for %s from now on",
+				codec, src, codec.extensions())
 		}
 		heifSupport.Unlock()
 	}
@@ -591,11 +638,11 @@ func WithDecodeFallback(src, dst string, decode func(src, dst string) error, att
 }
 
 // vipsHEIF runs attempt while holding heifSupport, unless ffmpeg fallback is already
-// latched. The bool is true when attempt was not called.
-func vipsHEIF(src string, attempt func(path string) error) (error, bool) {
+// latched for codec. The bool is true when attempt was not called.
+func vipsHEIF(codec heifCodec, src string, attempt func(path string) error) (error, bool) {
 	heifSupport.Lock()
 	defer heifSupport.Unlock()
-	if heifSupport.decoder == heifByFallback {
+	if heifSupport.decoder[codec] == heifByFallback {
 		return nil, true
 	}
 	return attempt(src), false
