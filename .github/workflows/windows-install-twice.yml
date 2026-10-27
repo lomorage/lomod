@@ -1,0 +1,112 @@
+# Temporary: proves install.ps1 is safe to re-run, on a real Windows host.
+#
+# The bug this guards against was invisible on a first install -- Register-ScheduledTask only
+# failed with ResourceExists (0x800700b7) the *second* time, and the call-site try/catch turned
+# that into a warning, so a reinstall quietly ended up with no daily update check at all.
+#
+# Runs the installer twice against the published release manifest, under Windows PowerShell 5.1
+# (what `irm https://lomorage.com/windows/install.ps1 | iex` gets on a stock Windows box), and
+# then checks what the second run left behind. Delete this workflow once the fix is merged, or
+# promote it to a permanent job in ci.yml.
+name: Windows installer re-run check
+
+on:
+  push:
+    branches: [ci/windows-install-twice]
+  workflow_dispatch:
+
+jobs:
+  install-twice:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: First install
+        shell: powershell
+        run: |
+          # A child powershell.exe, so the installer's own `exit 1` is observable rather than
+          # taking this step's shell down with it.
+          & powershell.exe -NoProfile -File .\installers\windows\install.ps1 -NoBrowser *>&1 |
+            Tee-Object -FilePath run1.log
+          "install.ps1 exit code: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "first install failed (exit $LASTEXITCODE)" }
+
+      - name: Second install, over the first
+        shell: powershell
+        run: |
+          & powershell.exe -NoProfile -File .\installers\windows\install.ps1 -NoBrowser *>&1 |
+            Tee-Object -FilePath run2.log
+          "install.ps1 exit code: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "second install failed (exit $LASTEXITCODE)" }
+
+      - name: Check what the second run left behind
+        shell: powershell
+        run: |
+          $failures = 0
+          function Ok($m)  { Write-Host "  PASS  $m" }
+          function Bad($m) { Write-Host "  FAIL  $m"; $script:failures++ }
+
+          $run2 = Get-Content run2.log -Raw
+
+          # The regression itself.
+          if ($run2 -match '0x800700b7|ResourceExists|already exists') {
+            Bad "second run still hit a task-already-exists error"
+          } else { Ok "no ResourceExists error on the re-run" }
+
+          if ($run2 -match 'Could not register the auto-update Scheduled Task') {
+            Bad "second run could not register the auto-update task"
+          } else { Ok "auto-update task registered on the re-run" }
+
+          if ($run2 -match 'daily auto-update check: enabled') {
+            Ok "summary reports the auto-update check as enabled"
+          } else { Bad "summary did not report the auto-update check as enabled" }
+
+          # State, not just output.
+          $tasks = @(Get-ScheduledTask -TaskName LomorageUpdate -ErrorAction SilentlyContinue)
+          if ($tasks.Count -eq 1) { Ok "exactly one LomorageUpdate task" } else { Bad "$($tasks.Count) LomorageUpdate tasks" }
+          if ($tasks.Count -ge 1) {
+            $t = $tasks[0]
+            if (@($t.Triggers)[0].StartBoundary -like '*T03:15:00*') { Ok "trigger intact: daily 03:15" } else { Bad "trigger: $(@($t.Triggers)[0].StartBoundary)" }
+            if ($t.Principal.RunLevel -eq 'Limited') { Ok "RunLevel intact: Limited" } else { Bad "RunLevel: $($t.Principal.RunLevel)" }
+          }
+
+          foreach ($pair in @(
+            @{ name = 'Startup shortcut';   path = (Join-Path ([Environment]::GetFolderPath('Startup')) 'Lomorage.lnk') },
+            @{ name = 'Start Menu shortcut'; path = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Lomorage.lnk') },
+            @{ name = 'version.txt';        path = (Join-Path $env:LOCALAPPDATA 'Lomorage\lomod\version.txt') },
+            @{ name = 'lomod.exe';          path = (Join-Path $env:LOCALAPPDATA 'Lomorage\lomod\lomod.exe') }
+          )) {
+            if (Test-Path $pair.path) { Ok "$($pair.name) present" } else { Bad "$($pair.name) missing: $($pair.path)" }
+          }
+
+          # Only one shortcut per folder, not one per install.
+          foreach ($folder in 'Startup', 'Programs') {
+            $lnks = @(Get-ChildItem ([Environment]::GetFolderPath($folder)) -Filter 'Lomorage*.lnk' -ErrorAction SilentlyContinue)
+            if ($lnks.Count -eq 1) { Ok "$folder has exactly one Lomorage shortcut" } else { Bad "$folder has $($lnks.Count)" }
+          }
+
+          # No leftover installer zip in %TEMP% -- the cleanup still runs, it is just non-fatal now.
+          $zips = @(Get-ChildItem $env:TEMP -Filter 'lomorage-windows-*.zip' -ErrorAction SilentlyContinue)
+          if ($zips.Count -eq 0) { Ok "temp zip cleaned up" } else { Bad "$($zips.Count) leftover zip(s) in TEMP" }
+
+          Write-Host ""
+          if ($failures -gt 0) { throw "$failures check(s) failed" }
+          Write-Host "re-run is clean"
+
+      - name: Installer output, both runs
+        if: always()
+        shell: powershell
+        run: |
+          foreach ($f in 'run1.log', 'run2.log') {
+            Write-Host "===== $f ====="
+            if (Test-Path $f) { Get-Content $f } else { Write-Host "(missing)" }
+            Write-Host ""
+          }
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: installer-logs
+          path: run*.log
+          if-no-files-found: warn
