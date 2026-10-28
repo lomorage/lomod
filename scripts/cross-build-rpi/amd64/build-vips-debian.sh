@@ -43,7 +43,7 @@ docker build --platform "$PLATFORM" --build-arg "BASE_IMAGE=$BASE_IMAGE" --build
   "$REPO/scripts/cross-build-rpi/amd64"
 
 # -dev packages so apt pulls in each release's own matching runtime libs.
-DEPENDS="liblcms2-dev,libexpat1-dev,libfftw3-dev,libwebp-dev,libtiff-dev,libexif-dev,libpng-dev,libjpeg62-turbo-dev,libglib2.0-dev,libimagequant-dev,libheif-dev,liborc-0.4-dev,libmagickcore-dev,libxml2-dev,libde265-dev,libopenjp2-7-dev,libsqlite3-dev,libgsf-1-dev,imagemagick"
+DEPENDS="liblcms2-dev,libexpat1-dev,libfftw3-dev,libwebp-dev,libtiff-dev,libexif-dev,libpng-dev,libjpeg62-turbo-dev,libglib2.0-dev,libimagequant-dev,libheif-dev,libaom-dev,liborc-0.4-dev,libmagickcore-dev,libxml2-dev,libde265-dev,libopenjp2-7-dev,libsqlite3-dev,libgsf-1-dev,imagemagick"
 
 dist=$(mktemp -d)
 mkdir -p "$dist/usr/local" "$dist/DEBIAN"

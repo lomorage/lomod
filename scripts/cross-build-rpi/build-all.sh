@@ -58,9 +58,14 @@ bash rpm/package-rocky9.sh
 # our RPMs target. The same tag is in rpm/Dockerfile.opensuse-vips-build and rpm/package-opensuse.sh,
 # and all three must agree -- lomo-vips and lomod have to be built against the same Leap.
 build_image_if_missing lomo-vips-opensuse-build rpm/Dockerfile.opensuse-vips-build rpm
+# libheif-aom: Leap 16.0's libheif is 1.23.5, new enough for AVIF, but it ships
+# the AV1 decoder as a separate dlopen'd plugin package, so the auto-Requires on
+# vips's linked SONAMEs never pulls it and heif_have_decoder_for_format(AV1) comes
+# back false -- an .avif stores but gets no preview. Measured, not assumed: Rocky 9's
+# libheif 1.23.6 already answers true without any extra package.
 bash rpm/package-vips-generic.sh lomo-vips-opensuse-build opensuse/leap:16.0 \
   lomo-vips_8.12.2_opensuse_amd64.rpm \
-  "sqlite3, libblkid1, util-linux"
+  "sqlite3, libblkid1, util-linux, libheif-aom"
 bash rpm/package-opensuse.sh
 
 echo "=== Done. Artifacts: ==="
