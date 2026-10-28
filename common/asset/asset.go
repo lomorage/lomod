@@ -669,6 +669,17 @@ func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm o
 		return errors.Errorf("preview asset %s is not image", previewFile)
 	}
 
+	// Reject before anything else: WithDecodeFallback below would otherwise run the
+	// master through ffmpeg for a request that cannot be served either way, and would
+	// wrap this sentinel if that decode failed -- turning the client's 400 into a 500.
+	format := strings.ToLower(strings.TrimPrefix(filepath.Ext(previewFile), "."))
+	if !xcodeFormats[format] {
+		logrus.Warnf("cannot transcode %s to %s: no vips saver for it", assetFile, format)
+		// bare sentinel: common.WriteError maps errors by value, so wrapping it here
+		// would turn the client's 400 into a 500
+		return common.ErrNotImplementedFormat
+	}
+
 	logrus.Debugf("start transcode %s -> %s", assetFile, previewFile)
 	if fi, err := os.Stat(previewFile); err == nil {
 		if fi.Size() != 0 {
@@ -686,7 +697,7 @@ func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm o
 	}
 
 	err := preview.WithDecodeFallback(assetFile, previewFile, decode, func(src string) error {
-		return xcodeImageOnce(src, previewFile)
+		return xcodeImageOnce(src, previewFile, format)
 	})
 	if err != nil {
 		logrus.Debugf("error transcode %s -> %s: %s", assetFile, previewFile, err)
@@ -696,7 +707,19 @@ func XcodeImage(ctx context.Context, assetFile, previewFile string, folderPerm o
 	return nil
 }
 
-func xcodeImageOnce(src, previewFile string) error {
+// xcodeFormats are the formats xcodeImageOnce can actually write, keyed by the preview
+// file's extension. Anything else used to be saved as WebP under the requested extension,
+// which http.ServeFile then served with that extension's Content-Type -- WebP bytes
+// labelled image/avif or image/png, cached immutable for a year.
+var xcodeFormats = map[string]bool{
+	ext.JPGString:  true,
+	ext.PNGString:  true,
+	ext.WebPString: true,
+}
+
+// xcodeImageOnce writes src to previewFile in format, which XcodeImage has already
+// checked against xcodeFormats.
+func xcodeImageOnce(src, previewFile, format string) error {
 	// thumbnail with size=down and an out-of-range box keeps the original size; unlike
 	// vipsload (which only reads vips' own .v format) it loads any format and autorotates.
 	outImage, err := vips.Thumbnail(src, maxXcodeDimension,
@@ -716,8 +739,11 @@ func xcodeImageOnce(src, previewFile string) error {
 	vips.RemoveImageMetadata(outImage, "icc-profile-data")
 
 	return preview.WriteAtomically(previewFile, func(tmp string) error {
-		if strings.TrimPrefix(filepath.Ext(previewFile), ".") == ext.JPGString {
+		switch format {
+		case ext.JPGString:
 			return vips.Jpegsave(outImage, tmp)
+		case ext.PNGString:
+			return vips.Pngsave(outImage, tmp)
 		}
 		return vips.Webpsave(outImage, tmp)
 	})

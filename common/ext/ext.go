@@ -2,6 +2,8 @@ package ext
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -9,6 +11,7 @@ import (
 
 	"bitbucket.org/lomoware/lomo-backend/common"
 	"github.com/leslie-wang/filetype"
+	"github.com/leslie-wang/filetype/matchers/isobmff"
 	"github.com/pkg/errors"
 )
 
@@ -55,6 +58,8 @@ const (
 	Mkv
 	// Gif video format
 	Gif
+	// Avif image format.
+	Avif
 	// NoXcode to disable transcoding.
 	NoXcode = 100
 )
@@ -103,6 +108,8 @@ const (
 	MkvString = "mkv"
 	// GifString video format.
 	GifString = "gif"
+	// AvifString image format.
+	AvifString = "avif"
 )
 
 // GetExtString gets the extension string form by its ID.
@@ -150,6 +157,8 @@ func GetExtString(extID int) (string, error) {
 		return MkvString, nil
 	case Gif:
 		return GifString, nil
+	case Avif:
+		return AvifString, nil
 	}
 	return "", common.ErrNotImplementedFormat
 }
@@ -201,6 +210,8 @@ func GetExtID(ext string) (int, error) {
 		return Mkv, nil
 	case GifString:
 		return Gif, nil
+	case AvifString:
+		return Avif, nil
 	}
 	return -1, common.ErrNotImplementedFormat
 }
@@ -350,6 +361,8 @@ func MkPreviewAssetName(assetName, ext string, width, height uint, previewVideo,
 		fallthrough
 	case GifString:
 		fallthrough
+	case AvifString:
+		fallthrough
 	case JPEGString:
 		fallthrough
 	case JPGString:
@@ -421,6 +434,8 @@ func IsMediaFile(filename string) bool {
 	case ArwString:
 		fallthrough
 	case MkvString:
+		fallthrough
+	case AvifString:
 		fallthrough
 	case ThreeGPString:
 		return true
@@ -504,10 +519,49 @@ func IsImageFile(filename string) bool {
 		fallthrough
 	case GifString:
 		fallthrough
+	case AvifString:
+		fallthrough
 	case HEIFString:
 		return true
 	}
 	return false
+}
+
+// avifBrands are the ftyp brands an AVIF still image or sequence declares.
+var avifBrands = map[string]bool{"avif": true, "avis": true}
+
+// isAvif reports whether filename is ISO-BMFF data branded as AVIF. filetype's matcher
+// only accepts the heic brand, so an AVIF file reads as unknown there.
+func isAvif(filename string) (bool, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	// ftyp is the first box, and IsISOBMFF wants the whole of it in the buffer: an
+	// encoder that lists many compatible brands makes it longer than the 32 bytes a
+	// plain "avif,mif1,miaf,MA1B" takes, so read well past any sane ftyp.
+	buf := make([]byte, 512)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return false, err
+	}
+	buf = buf[:n]
+	if !isobmff.IsISOBMFF(buf) {
+		return false, nil
+	}
+
+	major, _, compatible := isobmff.GetFtyp(buf)
+	if avifBrands[major] {
+		return true, nil
+	}
+	for _, brand := range compatible {
+		if avifBrands[brand] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // IsMediaFileMatch checks if media file matches extension or not
@@ -516,6 +570,17 @@ func IsMediaFileMatch(filename string) error {
 	// skip unsupported format firstly
 	if e == DngString || e == EncString {
 		return nil
+	}
+
+	if e == AvifString {
+		ok, err := isAvif(filename)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+		return errors.Errorf("not AVIF-branded ISO-BMFF data: %s", filename)
 	}
 
 	typ, err := filetype.MatchFile(filename)
@@ -618,6 +683,8 @@ func ChromecastMIMEType(extid int) (string, string, error) {
 	case HEIF:
 		fallthrough
 	case HEIC:
+		fallthrough
+	case Avif:
 		return "image/jpeg", "icodec=jpg", nil
 	case PNG:
 		return "image/png", "", nil
