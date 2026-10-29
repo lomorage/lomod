@@ -18,6 +18,17 @@ BASE_IMAGE="$2"
 USE_ARCHIVE_MIRROR="${3:-false}"
 ARCH="${4:-amd64}"
 VIPS_VERSION="${VIPS_VERSION:-8.12.2}"
+# The Debian revision is ours, not upstream's. The package content changed
+# -- it now carries a libheif that can decode AVIF, see
+# Dockerfile.debian-vips-build -- while vips itself is still 8.12.2, and
+# upstream never released an 8.12.3 (the 8.12 series ends at .2), so the
+# revision is the only honest place to say "same software, repackaged".
+# It is also load-bearing: reprepro rejects a same-version-different-
+# checksum resubmit, and apt on an already-installed device would see no
+# upgrade at all -- dpkg --compare-versions 8.12.2-2 gt 8.12.2 is true,
+# 8.12.2 gt 8.12.2 is not. Reset it to 1 when VIPS_VERSION itself moves.
+PKG_REVISION="${PKG_REVISION:-2}"
+PKG_VERSION="${VIPS_VERSION}-${PKG_REVISION}"
 # Empty means "let the Dockerfile use nproc"; set it to 2 or 3 for a qemu
 # (arm64/armhf) build, which otherwise runs out of RAM.
 MAKE_JOBS="${MAKE_JOBS:-}"
@@ -58,14 +69,14 @@ docker rm "$cid" >/dev/null
 
 cat > "$dist/DEBIAN/control" <<EOF
 Package: lomo-vips
-Version: $VIPS_VERSION
+Version: $PKG_VERSION
 Maintainer: Lomoware
 Architecture: $ARCH
 Description: libvips package required by lomorage
 Depends: $DEPENDS
 EOF
 
-outname="lomo-vips_${VIPS_VERSION}_${CODENAME}_${ARCH}.deb"
+outname="lomo-vips_${PKG_VERSION}_${CODENAME}_${ARCH}.deb"
 # -Zxz: modern dpkg-deb defaults to zstd, which buster/bullseye's dpkg
 # (1.19/1.20) can't unpack at all -- xz is supported since ancient dpkg.
 dpkg-deb --build -Zxz --root-owner-group "$dist" "$OUT/$outname"

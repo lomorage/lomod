@@ -12,7 +12,7 @@ RPMREPO="$SITE/rpm/rocky9"
 GPG_KEY_EMAIL=lomorage@gmail.com
 
 BACKEND_RPM=$(ls -t "$RPM_OUT"/lomo-backend-*.el9.x86_64.rpm | head -1)
-VIPS_RPM="$RPM_OUT/lomo-vips_8.12.2_rocky9_amd64.rpm"
+VIPS_RPM="$RPM_OUT/lomo-vips_8.12.2-2_rocky9_amd64.rpm"
 mkdir -p "$RPMREPO"
 cp "$BACKEND_RPM" "$VIPS_RPM" "$RPMREPO/"
 

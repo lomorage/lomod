@@ -29,10 +29,12 @@ if [ ! -f "$RELEASES/LATEST_RELEASE_RPI" ]; then
 fi
 LOMOD_VERSION=$(cat "$RELEASES/LATEST_RELEASE_RPI")
 
-# lomo-vips itself isn't republished here: its version (8.12.2) is unchanged
-# and jammy/noble already have it from when it was first added; reprepro
-# would reject a same-version-different-checksum resubmit anyway. Bump
-# VIPS_VERSION and rerun build-vips-ubuntu.sh first if vips itself changed.
+# lomo-vips is not published here, deliberately: it moves on its own, much
+# slower schedule than lomod, and the great majority of lomod releases must
+# not touch it. publish-vips-debian.sh does that when it is needed. Note
+# that reprepro rejects a same-version-different-checksum resubmit, so a
+# lomo-vips whose content changed needs a bumped Debian revision
+# (PKG_REVISION in amd64/build-vips-debian.sh), not just a rebuild.
 for f in "$RELEASES/lomod_${LOMOD_VERSION}_armhf.deb" \
          "$RELEASES/lomod_${LOMOD_VERSION}_arm64.deb" \
          "$RELEASES/lomod_${LOMOD_VERSION}_amd64.deb" \

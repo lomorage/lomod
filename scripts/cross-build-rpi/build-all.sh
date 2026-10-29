@@ -5,6 +5,9 @@
 #     against Debian buster's glibc -- covers Debian 10-13 and reused as-is
 #     for Ubuntu bionic/focal/groovy (shared SONAMEs, see README.md)
 #   - .deb packages for the above (armhf/arm64/amd64)
+#   - lomo-vips for Debian buster/bullseye/bookworm/trixie (amd64; the
+#     arm64/armhf buster pair is opt-in via BUILD_VIPS_QEMU=1, it runs
+#     under qemu and takes an hour-plus per arch)
 #   - lomo-vips for Ubuntu jammy/noble (SONAME-incompatible with Debian,
 #     needs its own from-source build)
 #   - RPMs for Fedora (reuses the amd64 binaries + Fedora's own vips),
@@ -12,8 +15,9 @@
 #
 # Does NOT sign or publish anything -- that touches the live repo/signing
 # key and is a deliberate separate step, see publish-fedora.sh /
-# publish-rocky9.sh / publish-opensuse.sh and the debian/ apt repo tooling
-# in lomoware.github.io. This script only fills releases/.
+# publish-rocky9.sh / publish-opensuse.sh, publish-debian.sh for lomod and
+# publish-vips-debian.sh for lomo-vips, plus the debian/ apt repo tooling in
+# lomoware.github.io. This script only fills releases/.
 #
 # Run from WSL2 (needs docker, plus the one-time cross-gcc/sysroot setup
 # in README.md's "One-time setup" section).
@@ -39,6 +43,29 @@ bash package.sh
 # lomo-backend-docker debs for the lomorage/lomo-docker images, same binaries
 bash package-docker.sh
 
+# --- lomo-vips for Debian buster/bullseye/bookworm/trixie ---
+# Each codename needs its own build, see amd64/Dockerfile.debian-vips-build:
+# the amd64 lomo-vips once published for bookworm/trixie was buster-linked and
+# would not load there. amd64 is native and takes minutes.
+for cn in buster bullseye bookworm trixie; do
+  # buster's own mirrors are EOL, so it needs archive.debian.org.
+  if [ "$cn" = buster ]; then archive=true; else archive=false; fi
+  bash amd64/build-vips-debian.sh "$cn" "debian:$cn" "$archive" amd64
+done
+# arm64/armhf run every compiler process under qemu and take an hour-plus
+# each, so they are opt-in rather than part of every release: of the Debian
+# codenames only buster's lomo-vips content differs from what is already
+# published (bullseye upward decode AVIF with their own libheif, so their
+# build is byte-for-byte what is on the repo), and buster arm64/armhf is the
+# Pi. Run with BUILD_VIPS_QEMU=1 when that is what you actually need.
+# MAKE_JOBS caps parallelism; the default nproc gets the build OOM-killed
+# under qemu on a small box.
+if [ "${BUILD_VIPS_QEMU:-0}" = "1" ]; then
+  for arch in arm64 armhf; do
+    MAKE_JOBS="${MAKE_JOBS:-2}" bash amd64/build-vips-debian.sh buster debian:buster true "$arch"
+  done
+fi
+
 # --- lomo-vips for Ubuntu jammy/noble ---
 bash amd64/build-vips-ubuntu.sh jammy ubuntu:22.04
 bash amd64/build-vips-ubuntu.sh noble ubuntu:24.04
@@ -49,7 +76,7 @@ bash rpm/package-fedora.sh
 # --- RPM: Rocky Linux 9 ---
 build_image_if_missing lomo-vips-rocky9-build rpm/Dockerfile.rocky9-vips-build .
 bash rpm/package-vips-generic.sh lomo-vips-rocky9-build rockylinux:9 \
-  lomo-vips_8.12.2_rocky9_amd64.rpm \
+  lomo-vips_8.12.2-2_rocky9_amd64.rpm \
   "glib2-devel, expat-devel, fftw-devel, ImageMagick-devel, orc-devel, lcms2-devel, libheif-devel, zlib-devel, libwebp-devel, libtiff-devel, libpng-devel, libimagequant-devel, libjpeg-turbo-devel, libexif-devel, libgsf-devel, libxml2-devel, openjpeg2-devel, sqlite-devel"
 bash rpm/package-rocky9.sh
 
@@ -64,7 +91,7 @@ build_image_if_missing lomo-vips-opensuse-build rpm/Dockerfile.opensuse-vips-bui
 # back false -- an .avif stores but gets no preview. Measured, not assumed: Rocky 9's
 # libheif 1.23.6 already answers true without any extra package.
 bash rpm/package-vips-generic.sh lomo-vips-opensuse-build opensuse/leap:16.0 \
-  lomo-vips_8.12.2_opensuse_amd64.rpm \
+  lomo-vips_8.12.2-2_opensuse_amd64.rpm \
   "sqlite3, libblkid1, util-linux, libheif-aom"
 bash rpm/package-opensuse.sh
 

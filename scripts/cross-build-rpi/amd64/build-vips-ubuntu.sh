@@ -10,6 +10,10 @@ set -ex
 CODENAME="$1"
 BASE_IMAGE="$2"
 VIPS_VERSION="${VIPS_VERSION:-8.12.2}"
+# Our Debian revision, kept in step with build-vips-debian.sh -- see the
+# comment there for why a changed lomo-vips needs one.
+PKG_REVISION="${PKG_REVISION:-2}"
+PKG_VERSION="${VIPS_VERSION}-${PKG_REVISION}"
 
 if [ -z "$CODENAME" ] || [ -z "$BASE_IMAGE" ]; then
   echo "usage: $0 <codename> <base-image>" >&2
@@ -38,14 +42,14 @@ docker rm "$cid" >/dev/null
 
 cat > "$dist/DEBIAN/control" <<EOF
 Package: lomo-vips
-Version: $VIPS_VERSION
+Version: $PKG_VERSION
 Maintainer: Lomoware
 Architecture: amd64
 Description: libvips package required by lomorage
 Depends: $DEPENDS
 EOF
 
-outname="lomo-vips_${VIPS_VERSION}_${CODENAME}_amd64.deb"
+outname="lomo-vips_${PKG_VERSION}_${CODENAME}_amd64.deb"
 # -Zxz for consistency with build-vips-debian.sh/package.sh (jammy/noble's
 # own dpkg supports zstd, but there's no reason to differ here).
 dpkg-deb --build -Zxz --root-owner-group "$dist" "$OUT/$outname"
