@@ -1,7 +1,7 @@
 scripts/cross-build-rpi/*.sh text eol=lf
 scripts/cross-build-rpi/*.md text eol=lf
+scripts/cross-build-rpi/*.c text eol=lf
 scripts/cross-build-rpi/amd64/*.sh text eol=lf
-scripts/cross-build-rpi/amd64/*.c text eol=lf
 scripts/cross-build-rpi/amd64/Dockerfile.buster-build text eol=lf
 scripts/cross-build-rpi/amd64/Dockerfile.ubuntu-vips-build text eol=lf
 scripts/cross-build-rpi/amd64/Dockerfile.debian-vips-build text eol=lf

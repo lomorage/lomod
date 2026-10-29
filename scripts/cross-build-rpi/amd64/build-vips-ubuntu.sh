@@ -24,7 +24,7 @@ mkdir -p "$OUT"
 
 docker build --build-arg "BASE_IMAGE=$BASE_IMAGE" --build-arg "VIPS_VERSION=$VIPS_VERSION" \
   -t "$IMG" -f "$REPO/scripts/cross-build-rpi/amd64/Dockerfile.ubuntu-vips-build" \
-  "$REPO/scripts/cross-build-rpi/amd64"
+  "$REPO/scripts/cross-build-rpi"
 
 # -dev packages so apt pulls in each release's own matching runtime libs.
 DEPENDS="liblcms2-dev,libexpat1-dev,libfftw3-dev,libwebp-dev,libtiff-dev,libexif-dev,libpng-dev,libjpeg-turbo8-dev,libglib2.0-dev,libimagequant-dev,libheif-dev,liborc-0.4-dev,libmagickcore-dev,libxml2-dev,libde265-dev,libopenjp2-7-dev,libsqlite3-dev,libgsf-1-dev,imagemagick"

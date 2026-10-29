@@ -18,6 +18,9 @@ BASE_IMAGE="$2"
 USE_ARCHIVE_MIRROR="${3:-false}"
 ARCH="${4:-amd64}"
 VIPS_VERSION="${VIPS_VERSION:-8.12.2}"
+# Empty means "let the Dockerfile use nproc"; set it to 2 or 3 for a qemu
+# (arm64/armhf) build, which otherwise runs out of RAM.
+MAKE_JOBS="${MAKE_JOBS:-}"
 
 case "$ARCH" in
   amd64) PLATFORM=linux/amd64 ;;
@@ -39,8 +42,9 @@ mkdir -p "$OUT"
 
 docker build --platform "$PLATFORM" --build-arg "BASE_IMAGE=$BASE_IMAGE" --build-arg "VIPS_VERSION=$VIPS_VERSION" \
   --build-arg "USE_ARCHIVE_MIRROR=$USE_ARCHIVE_MIRROR" \
+  --build-arg "MAKE_JOBS=$MAKE_JOBS" \
   -t "$IMG" -f "$REPO/scripts/cross-build-rpi/amd64/Dockerfile.debian-vips-build" \
-  "$REPO/scripts/cross-build-rpi/amd64"
+  "$REPO/scripts/cross-build-rpi"
 
 # -dev packages so apt pulls in each release's own matching runtime libs.
 DEPENDS="liblcms2-dev,libexpat1-dev,libfftw3-dev,libwebp-dev,libtiff-dev,libexif-dev,libpng-dev,libjpeg62-turbo-dev,libglib2.0-dev,libimagequant-dev,libheif-dev,libaom-dev,liborc-0.4-dev,libmagickcore-dev,libxml2-dev,libde265-dev,libopenjp2-7-dev,libsqlite3-dev,libgsf-1-dev,imagemagick"

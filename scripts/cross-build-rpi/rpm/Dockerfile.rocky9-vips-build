@@ -16,6 +16,28 @@ RUN dnf -y install \
     libpng-devel libimagequant-devel libjpeg-turbo-devel libexif-devel \
     libgsf-devel libxml2-devel openjpeg2-devel sqlite-devel
 
+# Same AVIF question the Debian build asks, but here it is only an assertion:
+# Rocky 9's libheif is 1.23.6 and answers yes with nothing added -- unlike
+# openSUSE Leap, whose AV1 decoder is a separate plugin package (measured, not
+# assumed). So there is nothing to fix here -- what this guards is a future
+# release quietly shipping a libheif with no AV1 decoder, which would yield a
+# lomo-vips that stores .avif uploads and never previews them. Failing the
+# build is the right outcome: the fix would be the source-built libheif in
+# amd64/Dockerfile.debian-vips-build, and taking that on should be a deliberate
+# change, not something that happens by accident.
+# The build context is the cross-build-rpi root, shared by all four vips
+# Dockerfiles so they can use this one probe.
+COPY avif-decode-probe.c /tmp/avif-decode-probe.c
+RUN set -e; \
+    if gcc -o /tmp/avif-probe /tmp/avif-decode-probe.c $(pkg-config --cflags --libs libheif) 2>/dev/null \
+       && /tmp/avif-probe; then :; else \
+      echo "ERROR: this release's libheif cannot decode AVIF -- a lomo-vips built" >&2; \
+      echo "       here would store .avif uploads and never produce a preview." >&2; \
+      echo "       See amd64/Dockerfile.debian-vips-build for the source-built" >&2; \
+      echo "       libheif recipe, or add the release's AV1 decoder package." >&2; \
+      exit 1; \
+    fi
+
 ARG VIPS_VERSION=8.12.2
 RUN set -ex; \
     curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \

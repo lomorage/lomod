@@ -12,7 +12,32 @@ RUN zypper --non-interactive refresh && \
     liblcms2-devel libheif-devel zlib-devel libwebp-devel \
     libtiff-devel libpng16-devel libimagequant-devel libjpeg8-devel \
     libexif-devel libgsf-devel libxml2-devel openjpeg2-devel \
-    sqlite3-devel
+    sqlite3-devel libheif-aom
+# libheif-aom is not needed to *build* vips -- Leap 16.0's libheif is 1.23.5,
+# new enough for the AVIF API -- but it ships the AV1 decoder as a separate
+# dlopen'd plugin, so without it heif_have_decoder_for_format(AV1) is false and
+# the assertion below would (correctly) fail. The shipped half of this fix is
+# the matching Requires in build-all.sh: nothing links the plugin, so the rpm's
+# auto-Requires can never pull it on its own. Installing it here does not leak
+# into the package -- package-vips-generic.sh copies only /usr/local.
+#
+# Same AVIF question the Debian build asks, but here it is only an assertion:
+# Leap 16.0 answers yes once libheif-aom is present. What this guards is a
+# future release quietly shipping a libheif with no AV1 decoder, or renaming
+# that plugin package, which would yield a lomo-vips that stores .avif uploads
+# and never previews them. Failing the build is the right outcome.
+# The build context is the cross-build-rpi root, shared by all four vips
+# Dockerfiles so they can use this one probe.
+COPY avif-decode-probe.c /tmp/avif-decode-probe.c
+RUN set -e; \
+    if gcc -o /tmp/avif-probe /tmp/avif-decode-probe.c $(pkg-config --cflags --libs libheif) 2>/dev/null \
+       && /tmp/avif-probe; then :; else \
+      echo "ERROR: this release's libheif cannot decode AVIF -- a lomo-vips built" >&2; \
+      echo "       here would store .avif uploads and never produce a preview." >&2; \
+      echo "       See amd64/Dockerfile.debian-vips-build for the source-built" >&2; \
+      echo "       libheif recipe, or add the release's AV1 decoder package." >&2; \
+      exit 1; \
+    fi
 
 ARG VIPS_VERSION=8.12.2
 RUN set -ex; \

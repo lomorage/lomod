@@ -27,6 +27,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libexif-dev libgsf-1-dev libxml2-dev libde265-dev libopenjp2-7-dev \
     libsqlite3-dev libaom-dev
 
+# Name the CA bundle explicitly. buster's curl reports "CAfile: none, CApath:
+# /etc/ssl/certs", so it depends on the hashed symlinks that ca-certificates'
+# postinst generates -- and under qemu-arm, which is how the armhf package is
+# built, that rehash silently produces none: measured 0 symlinks on armhf
+# against 137 on arm64, same image and same package version, while the bundle
+# file itself is byte-identical and works the moment curl is told to use it.
+# Without this, every https download below dies with "unable to get local
+# issuer certificate" -- which is why an armhf buster build of this image has
+# never completed here, the vips download fails the same way. Inert on every
+# arch and codename where the rehash did run.
+ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
 # AVIF previews need a libheif that can decode AV1, which buster's 1.3.2 cannot
 # -- it predates AVIF entirely, so the probe does not even compile against it.
 # An .avif therefore uploads and stores fine on a buster device but never gets a
@@ -49,6 +61,12 @@ ARG LIBHEIF_VERSION=1.12.0
 # it never enters the cache, and only libvips, which carries the matching rpath
 # below, can see it.
 ARG LIBHEIF_PREFIX=/usr/local/lomo-vips
+# Compile parallelism. Defaults to nproc, which is right for a native build,
+# but an armhf/arm64 build runs every compiler process under qemu on the
+# host's full core count while sharing the host's RAM -- 12 jobs on a 7 GB
+# WSL box gets the build OOM-killed partway through libvips. Pass
+# MAKE_JOBS=2 for those.
+ARG MAKE_JOBS=
 RUN set -ex; \
     if gcc -o /tmp/avif-probe /tmp/avif-decode-probe.c $(pkg-config --cflags --libs libheif) 2>/dev/null \
        && /tmp/avif-probe; then \
@@ -60,7 +78,7 @@ RUN set -ex; \
       tar -C /tmp/libheif-src --strip-components=1 -xzf /tmp/libheif.tar.gz; \
       cd /tmp/libheif-src; \
       ./configure --prefix="${LIBHEIF_PREFIX}" --disable-examples --disable-static; \
-      make -j"$(nproc)"; \
+      make -j"${MAKE_JOBS:-$(nproc)}"; \
       make install; \
       cd /; \
       rm -rf /tmp/libheif-src /tmp/libheif.tar.gz; \
@@ -93,7 +111,7 @@ RUN set -ex; \
     cd /tmp/vips-src; \
     ./configure --prefix=/usr/local --disable-gtk-doc-html --disable-gtk-doc \
       LDFLAGS="-Wl,-rpath,${LIBHEIF_PREFIX}/lib"; \
-    make -j"$(nproc)"; \
+    make -j"${MAKE_JOBS:-$(nproc)}"; \
     make install; \
     ldconfig; \
     rm -rf /tmp/vips-src /tmp/vips.tar.gz

@@ -45,8 +45,8 @@ RPM using `lomo-vips.spec.in`.
 
 ```
 wsl -d Ubuntu
-docker build -t lomo-vips-rocky9-build   -f scripts/cross-build-rpi/rpm/Dockerfile.rocky9-vips-build   scripts/cross-build-rpi/rpm
-docker build -t lomo-vips-opensuse-build -f scripts/cross-build-rpi/rpm/Dockerfile.opensuse-vips-build scripts/cross-build-rpi/rpm
+docker build -t lomo-vips-rocky9-build   -f scripts/cross-build-rpi/rpm/Dockerfile.rocky9-vips-build   scripts/cross-build-rpi
+docker build -t lomo-vips-opensuse-build -f scripts/cross-build-rpi/rpm/Dockerfile.opensuse-vips-build scripts/cross-build-rpi
 
 bash scripts/cross-build-rpi/amd64/build.sh              # if not already built
 bash scripts/cross-build-rpi/rpm/package-rocky9.sh        # -> releases/lomo-backend-*.el9.x86_64.rpm

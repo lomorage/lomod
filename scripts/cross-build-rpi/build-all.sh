@@ -47,7 +47,7 @@ bash amd64/build-vips-ubuntu.sh noble ubuntu:24.04
 bash rpm/package-fedora.sh
 
 # --- RPM: Rocky Linux 9 ---
-build_image_if_missing lomo-vips-rocky9-build rpm/Dockerfile.rocky9-vips-build rpm
+build_image_if_missing lomo-vips-rocky9-build rpm/Dockerfile.rocky9-vips-build .
 bash rpm/package-vips-generic.sh lomo-vips-rocky9-build rockylinux:9 \
   lomo-vips_8.12.2_rocky9_amd64.rpm \
   "glib2-devel, expat-devel, fftw-devel, ImageMagick-devel, orc-devel, lcms2-devel, libheif-devel, zlib-devel, libwebp-devel, libtiff-devel, libpng-devel, libimagequant-devel, libjpeg-turbo-devel, libexif-devel, libgsf-devel, libxml2-devel, openjpeg2-devel, sqlite-devel"
@@ -57,7 +57,7 @@ bash rpm/package-rocky9.sh
 # Pinned, not :latest: upstream slid that tag from 15.x to 16.0, silently changing which release
 # our RPMs target. The same tag is in rpm/Dockerfile.opensuse-vips-build and rpm/package-opensuse.sh,
 # and all three must agree -- lomo-vips and lomod have to be built against the same Leap.
-build_image_if_missing lomo-vips-opensuse-build rpm/Dockerfile.opensuse-vips-build rpm
+build_image_if_missing lomo-vips-opensuse-build rpm/Dockerfile.opensuse-vips-build .
 # libheif-aom: Leap 16.0's libheif is 1.23.5, new enough for AVIF, but it ships
 # the AV1 decoder as a separate dlopen'd plugin package, so the auto-Requires on
 # vips's linked SONAMEs never pulls it and heif_have_decoder_for_format(AV1) comes
