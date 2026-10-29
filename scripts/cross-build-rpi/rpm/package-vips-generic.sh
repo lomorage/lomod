@@ -10,6 +10,10 @@ RPM_BUILD_IMAGE="$2"
 OUTNAME="$3"
 REQUIRES="$4"
 VIPS_VERSION="${VIPS_VERSION:-8.12.2}"
+# Our rpm Release, the equivalent of the Debian revision -- same reason, see
+# amd64/build-vips-debian.sh. Must agree with the -2 in the OUTNAME that
+# build-all.sh passes in.
+PKG_RELEASE="${PKG_RELEASE:-2}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 OUT="$REPO/releases"
@@ -31,7 +35,7 @@ echo "/usr/local/lib" > "$BUILDROOT/etc/ld.so.conf.d/lomo-vips.conf"
 grep -rlZ '^#!/usr/bin/python$' "$BUILDROOT/usr/local/bin" 2>/dev/null | \
   xargs -0 -r sed -i '1s|^#!/usr/bin/python$|#!/usr/bin/python3|'
 
-sed "s/%{_lomo_vips_version}/$VIPS_VERSION/; s|%{_lomo_buildroot}|/work/buildroot|; s|%{_lomo_requires}|$REQUIRES|" \
+sed "s/%{_lomo_vips_version}/$VIPS_VERSION/; s/%{_lomo_vips_release}/$PKG_RELEASE/; s|%{_lomo_buildroot}|/work/buildroot|; s|%{_lomo_requires}|$REQUIRES|" \
   "$REPO/scripts/cross-build-rpi/rpm/lomo-vips.spec.in" > "$BUILDROOT.spec"
 
 docker run --rm \

@@ -12,7 +12,7 @@ RPMREPO="$SITE/rpm/opensuse"
 GPG_KEY_EMAIL=lomorage@gmail.com
 
 BACKEND_RPM=$(ls -t "$RPM_OUT"/lomo-backend-*.x86_64.rpm | grep -v -E '\.(fc44|el9)\.' | head -1)
-VIPS_RPM="$RPM_OUT/lomo-vips_8.12.2_opensuse_amd64.rpm"
+VIPS_RPM="$RPM_OUT/lomo-vips_8.12.2-2_opensuse_amd64.rpm"
 mkdir -p "$RPMREPO"
 cp "$BACKEND_RPM" "$VIPS_RPM" "$RPMREPO/"
 

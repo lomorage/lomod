@@ -17,6 +17,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libexif-dev libgsf-1-dev libxml2-dev libde265-dev libopenjp2-7-dev \
     libsqlite3-dev
 
+# Same AVIF question the Debian build asks, but here it is only an assertion:
+# jammy's libheif is 1.12.0 and noble's 1.17.6, and both decode AV1 with no
+# extra package (measured, not assumed). So there is nothing to fix here --
+# what this guards is a future release quietly shipping a libheif with no AV1
+# decoder, which would yield a lomo-vips that stores .avif uploads and never
+# previews them. Failing the build is the right outcome: the fix would be the
+# source-built libheif in Dockerfile.debian-vips-build, and taking that on
+# should be a deliberate change, not something that happens by accident.
+# The build context is the cross-build-rpi root, shared by all four vips
+# Dockerfiles so they can use this one probe.
+COPY avif-decode-probe.c /tmp/avif-decode-probe.c
+RUN set -e; \
+    if gcc -o /tmp/avif-probe /tmp/avif-decode-probe.c $(pkg-config --cflags --libs libheif) 2>/dev/null \
+       && /tmp/avif-probe; then :; else \
+      echo "ERROR: this release's libheif cannot decode AVIF -- a lomo-vips built" >&2; \
+      echo "       here would store .avif uploads and never produce a preview." >&2; \
+      echo "       See amd64/Dockerfile.debian-vips-build for the source-built" >&2; \
+      echo "       libheif recipe, or add the release's AV1 decoder package." >&2; \
+      exit 1; \
+    fi
+
 ARG VIPS_VERSION=8.12.2
 RUN set -ex; \
     curl -fsSL -o /tmp/vips.tar.gz "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.gz"; \

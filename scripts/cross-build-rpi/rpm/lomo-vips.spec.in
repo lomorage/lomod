@@ -1,6 +1,6 @@
 Name: lomo-vips
 Version: %{_lomo_vips_version}
-Release: 1%{?dist}
+Release: %{_lomo_vips_release}%{?dist}
 Summary: libvips package required by lomorage
 License: LGPL-2.1-or-later
 BuildArch: x86_64
