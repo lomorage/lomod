@@ -6,8 +6,8 @@
 #     for Ubuntu bionic/focal/groovy (shared SONAMEs, see README.md)
 #   - .deb packages for the above (armhf/arm64/amd64)
 #   - lomo-vips for Debian buster/bullseye/bookworm/trixie (amd64; the
-#     arm64/armhf buster pair is opt-in via BUILD_VIPS_QEMU=1, it runs
-#     under qemu and takes an hour-plus per arch)
+#     arm64/armhf builds buster and bookworm need are opt-in via
+#     BUILD_VIPS_QEMU=1, they run under qemu at half an hour each)
 #   - lomo-vips for Ubuntu jammy/noble (SONAME-incompatible with Debian,
 #     needs its own from-source build)
 #   - RPMs for Fedora (reuses the amd64 binaries + Fedora's own vips),
@@ -52,17 +52,29 @@ for cn in buster bullseye bookworm trixie; do
   if [ "$cn" = buster ]; then archive=true; else archive=false; fi
   bash amd64/build-vips-debian.sh "$cn" "debian:$cn" "$archive" amd64
 done
-# arm64/armhf run every compiler process under qemu and take an hour-plus
-# each, so they are opt-in rather than part of every release: of the Debian
-# codenames only buster's lomo-vips content differs from what is already
-# published (bullseye upward decode AVIF with their own libheif, so their
-# build is byte-for-byte what is on the repo), and buster arm64/armhf is the
-# Pi. Run with BUILD_VIPS_QEMU=1 when that is what you actually need.
-# MAKE_JOBS caps parallelism; the default nproc gets the build OOM-killed
-# under qemu on a small box.
+# arm64/armhf run every compiler process under qemu and take half an hour
+# each, so they are opt-in rather than part of every release. Which codenames
+# need them was measured by installing the *published* deb in a container of
+# its own release and trying to decode:
+#   buster   arm64/armhf -- vips runs, AVIF does not decode. The published
+#            deb bundles a libheif 1.12.0 under /usr/local/lib, but on arm the
+#            ldconfig cache prefers /usr/lib/<triplet> (aarch64-linux-gnu.conf
+#            sorts before libc.conf), so libvips loads buster's own 1.3.2.
+#   bookworm arm64/armhf -- vips does not even start:
+#            "libwebp.so.6: cannot open shared object file". The published deb
+#            is the buster-built blob, and bookworm has libwebp.so.7. This is
+#            the same breakage that was found and fixed for amd64, still live
+#            on arm, so lomod cannot run there at all today.
+#   bullseye arm64/armhf -- fine as published: still has libwebp.so.6, and its
+#            own libheif 1.11.0 decodes AVIF.
+#   trixie   arm64/armhf -- fine, already built per-release.
+# Run with BUILD_VIPS_QEMU=1 when that is what you actually need. MAKE_JOBS
+# caps parallelism; the default nproc gets the build OOM-killed under qemu on
+# a small box.
 if [ "${BUILD_VIPS_QEMU:-0}" = "1" ]; then
   for arch in arm64 armhf; do
     MAKE_JOBS="${MAKE_JOBS:-2}" bash amd64/build-vips-debian.sh buster debian:buster true "$arch"
+    MAKE_JOBS="${MAKE_JOBS:-2}" bash amd64/build-vips-debian.sh bookworm debian:bookworm false "$arch"
   done
 fi
 
