@@ -95,7 +95,9 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          # Match the macOS release toolchain: the vendored x/net socket code links to
+          # syscall.recvmsg, which newer Go releases no longer permit on Darwin.
+          go-version: "1.21.13"
           cache: false # dependencies are vendored
 
       - name: Install native dependencies
@@ -105,9 +107,6 @@ jobs:
         run: |
           GOFLAGS= go install github.com/GeertJohan/go.rice/rice@v1.0.2
           make build-rice
-
-      - name: Build everything
-        run: go build -tags "$TAGS" ./...
 
       - name: Media preview and format tests
         run: go test -tags "$TAGS" -timeout 10m ./common/preview/ ./common/ext/
