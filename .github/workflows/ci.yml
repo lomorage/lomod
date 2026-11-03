@@ -1,6 +1,8 @@
 # Basic checks on every push: everything compiles, the unit tests pass, a freshly built lomod
 # starts and serves the first-run setup page, and the Windows one-line installer survives
-# being run twice. scripts/release-all.sh refuses to release a commit this workflow hasn't
+# being run twice. Native macOS jobs build and smoke-test the release bundle on ARM and Intel,
+# including the bundled libvips HEIF/AVIF decode probe.
+# scripts/release-all.sh refuses to release a commit this workflow hasn't
 # passed -- note that this now includes the installer job, so an outage at lomorage.com or
 # GitHub Releases blocks releasing until it clears (SKIP_CI_CHECK=1 is the documented
 # override).
@@ -75,6 +77,57 @@ jobs:
           name: lomod-linux-amd64
           path: bin/lomod
           retention-days: 7
+
+  macos:
+    name: macos (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # Match the macOS release toolchain: the vendored x/net socket code links to
+          # syscall.recvmsg, which newer Go releases no longer permit on Darwin.
+          go-version: "1.21.13"
+          cache: false # dependencies are vendored
+
+      - name: Install native dependencies
+        run: brew install pkg-config vips ffmpeg exiftool dylibbundler zbar
+
+      - name: Embed web assets with go.rice
+        run: |
+          GOFLAGS= go install github.com/GeertJohan/go.rice/rice@v1.0.2
+          make build-rice
+
+      - name: Media preview and format tests
+        run: go test -tags "$TAGS" -timeout 10m ./common/preview/ ./common/ext/
+
+      - name: lomoupg self-update tests
+        run: CGO_ENABLED=0 go test -timeout 5m ./cmd/lomoupg/
+
+      - name: Build the release bundle and verify bundled HEIF decoding
+        # Ad-hoc signing exercises bundling without needing a Developer ID or notarization
+        # secrets. collect-deps.sh fails unless the bundled heifload decodes the AVIF fixture.
+        run: make release-macos MACOS_SIGN_IDENTITY=
+
+      - name: Smoke test the bundled server
+        run: bash scripts/ci/smoke-setup-qr.sh dist-macos/lomod
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lomod-macos-${{ matrix.arch }}
+          path: releases/macos/*.tar.gz
+          if-no-files-found: error
+          retention-days: 3
 
   # Installs lomod twice on a real Windows host. A reinstall is the documented repair/update
   # path, and the bug that prompted this job was invisible to everything above: Register-
