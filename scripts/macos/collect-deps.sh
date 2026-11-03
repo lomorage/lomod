@@ -261,21 +261,20 @@ if ! VIPSHOME="${DEST_DIR}" "${VIPS_PROBE}" --version >/dev/null 2>&1; then
     echo "   Rosetta 2: softwareupdate --install-rosetta" >&2
     exit 1
 fi
-if ! VIPSHOME="${DEST_DIR}" "${VIPS_PROBE}" thumbnail "${FIXTURE}" "${PROBE_TMP}/avif.jpg" 320 \
+# Invoke heifload directly and write every pixel to a native vips image. A generic
+# thumbnail can succeed through magickload even when the heif module is missing.
+if ! VIPSHOME="${DEST_DIR}" "${VIPS_PROBE}" heifload "${FIXTURE}" "${PROBE_TMP}/avif.v" \
         >"${PROBE_TMP}/err" 2>&1; then
     echo "!! The bundled libvips cannot decode AVIF:" >&2
     sed 's/^/   /' "${PROBE_TMP}/err" >&2
     echo "   Modules staged: ${MODULES_DIR:-none}" >&2
     echo "   Either the heif module did not make it into the bundle, or the libheif it needs" >&2
     echo "   has no AV1 decoder. Check what Homebrew's own vips reports first:" >&2
-    echo "     vips header -f heif-compression ${FIXTURE}" >&2
+    echo "     vipsheader -f heif-compression ${FIXTURE}" >&2
     exit 1
 fi
-echo "    loader:  $(VIPSHOME="${DEST_DIR}" "${VIPS_PROBE}" header -f vips-loader "${FIXTURE}")"
-# grep -m1 closes the pipe early, so vips exits on SIGPIPE and pipefail calls the pipeline
-# failed even when the match was found -- capture first, then decide what to print.
-modules_found="$(VIPSHOME="${DEST_DIR}" "${VIPS_PROBE}" --vips-info -l 2>&1 | grep -m1 'vips-modules-' || true)"
-echo "    modules: ${modules_found:-none reported}"
+echo "    loader:  heifload"
+echo "    modules: ${MODULES_DIR:-built-in}"
 # No HEVC fixture in the repo to decode, so this reports rather than asserts: without libde265
 # an iPhone HEIC still previews, but through ffmpeg (common/preview.WithDecodeFallback).
 de265=("${LIBS_DIR}"/*de265*)
