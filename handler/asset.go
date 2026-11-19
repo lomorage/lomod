@@ -578,10 +578,13 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 	// report it later (POST /assets/names), so that response is kept for a day only. Revalidating
 	// is cheap: ServeFile answers If-Modified-Since with a 304 that carries the new
 	// Content-Disposition. A known name never changes (the first one is kept).
+	// private: the name is the account's own (the same file can be named differently in another
+	// account), and the request is authorized per user, so a shared cache (a proxy in front of a
+	// remote address) must not keep it for others.
 	if origName != "" {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	} else {
-		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("Cache-Control", "private, max-age=86400")
 	}
 
 	served := masterfile
