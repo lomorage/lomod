@@ -77,6 +77,7 @@ func TestSetOrigNames(t *testing.T) {
 	defer db.Close()
 	if _, err := db.Exec(`create table asset(id integer primary key, user_id integer, hash text,
 		orig_name TEXT NOT NULL default '', orig_name_rev INTEGER NOT NULL default 0);
+		create table orig_name_counter(user_id INTEGER PRIMARY KEY, rev INTEGER NOT NULL);
 		insert into asset(user_id, hash) values (1, 'aaa'), (1, 'bbb'), (2, 'ccc');
 		update asset set orig_name = 'first.jpg' where hash = 'bbb';`); err != nil {
 		t.Fatal(err)
@@ -141,5 +142,20 @@ func TestSetOrigNames(t *testing.T) {
 	}
 	if got := list(3, 10); len(got) != 0 {
 		t.Errorf("feed after the last revision = %v", got)
+	}
+
+	// Deleting the asset with the newest revision must not let the next name reuse it: a device
+	// that already read up to 3 would skip that name.
+	if _, err := db.Exec(`delete from asset where orig_name_rev = 3; insert into asset(user_id, hash) values (1, 'ggg')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbx.InQuery(db, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := SetOrigNames(ctx, tx, 1, map[string]string{"ggg": "G.jpg"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := list(3, 10); len(got) != 1 || got[0] != (OrigNameChange{Hash: "ggg", Name: "G.jpg", Rev: 4}) {
+		t.Errorf("feed after 3, once the asset with revision 3 was deleted = %v", got)
 	}
 }

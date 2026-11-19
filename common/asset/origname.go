@@ -99,12 +99,21 @@ func GetOrigName(ctx context.Context, tx *sql.Tx, assetID int) (string, error) {
 // have none yet; a name already stored is kept, so the first device to report one wins. Each
 // name recorded gets the user's next orig_name_rev, for ListOrigNamesSince. It returns the name
 // each existing asset ends up with, keyed by hash; hashes with no asset are left out.
+//
+// The last revision handed out is kept in orig_name_counter, not derived from the assets:
+// deleting the asset holding the highest revision must not let a later name reuse it, or a
+// device that already read up to it would never see that name.
 func SetOrigNames(ctx context.Context, tx *sql.Tx, userID int, names map[string]string) (map[string]string, error) {
+	if _, err := tx.ExecContext(ctx, `insert or ignore into orig_name_counter (user_id, rev)
+		select ?, coalesce(max(orig_name_rev), 0) from asset where user_id = ?`, userID, userID); err != nil {
+		return nil, err
+	}
 	var rev int64
-	if err := tx.QueryRowContext(ctx, "select coalesce(max(orig_name_rev), 0) from asset where user_id = ?",
+	if err := tx.QueryRowContext(ctx, "select rev from orig_name_counter where user_id = ?",
 		userID).Scan(&rev); err != nil {
 		return nil, err
 	}
+	first := rev
 	update, err := tx.PrepareContext(ctx,
 		"update asset set orig_name = ?, orig_name_rev = ? where user_id = ? and hash = ? and orig_name = ''")
 	if err != nil {
@@ -136,6 +145,12 @@ func SetOrigNames(ctx context.Context, tx *sql.Tx, userID int, names map[string]
 			return nil, err
 		}
 		stored[hash] = got
+	}
+	if rev != first {
+		if _, err := tx.ExecContext(ctx, "update orig_name_counter set rev = ? where user_id = ?",
+			rev, userID); err != nil {
+			return nil, err
+		}
 	}
 	return stored, nil
 }
