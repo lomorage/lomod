@@ -96,12 +96,17 @@ func GetOrigName(ctx context.Context, tx *sql.Tx, assetID int) (string, error) {
 }
 
 // SetOrigNames records original names (hash -> already cleaned name) for a user's assets that
-// have none yet; a name already stored is kept, so the first device to report one wins. It
-// returns the name each existing asset ends up with, keyed by hash; hashes with no asset are
-// left out.
+// have none yet; a name already stored is kept, so the first device to report one wins. Each
+// name recorded gets the user's next orig_name_rev, for ListOrigNamesSince. It returns the name
+// each existing asset ends up with, keyed by hash; hashes with no asset are left out.
 func SetOrigNames(ctx context.Context, tx *sql.Tx, userID int, names map[string]string) (map[string]string, error) {
+	var rev int64
+	if err := tx.QueryRowContext(ctx, "select coalesce(max(orig_name_rev), 0) from asset where user_id = ?",
+		userID).Scan(&rev); err != nil {
+		return nil, err
+	}
 	update, err := tx.PrepareContext(ctx,
-		"update asset set orig_name = ? where user_id = ? and hash = ? and orig_name = ''")
+		"update asset set orig_name = ?, orig_name_rev = ? where user_id = ? and hash = ? and orig_name = ''")
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +120,12 @@ func SetOrigNames(ctx context.Context, tx *sql.Tx, userID int, names map[string]
 	stored := make(map[string]string, len(names))
 	for hash, name := range names {
 		if name != "" {
-			if _, err := update.ExecContext(ctx, name, userID, hash); err != nil {
+			res, err := update.ExecContext(ctx, name, rev+1, userID, hash)
+			if err != nil {
 				return nil, err
+			}
+			if n, err := res.RowsAffected(); err == nil && n > 0 {
+				rev++
 			}
 		}
 		var got string
@@ -129,4 +138,31 @@ func SetOrigNames(ctx context.Context, tx *sql.Tx, userID int, names map[string]
 		stored[hash] = got
 	}
 	return stored, nil
+}
+
+// OrigNameChange is a name recorded after the upload, in recording order.
+type OrigNameChange struct {
+	Hash string
+	Name string
+	Rev  int64
+}
+
+// ListOrigNamesSince returns up to limit of a user's names recorded after the upload with an
+// orig_name_rev above since, oldest first.
+func ListOrigNamesSince(ctx context.Context, tx *sql.Tx, userID int, since int64, limit int) ([]OrigNameChange, error) {
+	rows, err := tx.QueryContext(ctx, `select hash, orig_name, orig_name_rev from asset
+		where user_id = ? and orig_name_rev > ? order by orig_name_rev limit ?`, userID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	changes := []OrigNameChange{}
+	for rows.Next() {
+		var c OrigNameChange
+		if err := rows.Scan(&c.Hash, &c.Name, &c.Rev); err != nil {
+			return nil, err
+		}
+		changes = append(changes, c)
+	}
+	return changes, rows.Err()
 }

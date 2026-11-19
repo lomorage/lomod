@@ -574,7 +574,15 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 	// asset content is addressed by hash (+ codec/dimension query params) and never mutates in
 	// place, so it's safe to let browsers cache it indefinitely without revalidation. Set only
 	// once a file has actually been resolved, so error responses above stay uncached.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	// The exception is the download's name: while the original name is unknown a client may
+	// report it later (POST /assets/names), so that response is kept for a day only. Revalidating
+	// is cheap: ServeFile answers If-Modified-Since with a 304 that carries the new
+	// Content-Disposition. A known name never changes (the first one is kept).
+	if origName != "" {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
 
 	served := masterfile
 	if r.URL.Query().Get(common.QueryKeyOrig) == "" && previewfile != "" {

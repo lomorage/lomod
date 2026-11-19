@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"bitbucket.org/lomoware/lomo-backend/common"
@@ -78,6 +79,59 @@ func (h *Handler) setAssetOrigNames(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.conf.UseMemdb {
 		h.memdb.Unlock()
+	}
+	common.WriteBody(w, reply)
+}
+
+// origNamesPage bounds one reply of listAssetOrigNames.
+const origNamesPage = 1000
+
+// AssetOrigNamesSince is a page of names recorded after the upload.
+type AssetOrigNamesSince struct {
+	// Rev is what to pass as since for the next page: the last one listed, or since itself.
+	Rev   int64
+	Names []AssetOrigName
+	// More is true when there may be names after this page.
+	More bool
+}
+
+// listAssetOrigNames lists names recorded after the upload (POST /assets/names) with a revision
+// above ?since=, oldest first. Those don't change the tree hashes, so a device that already has
+// a day's listing learns of them only here.
+func (h *Handler) listAssetOrigNames(w http.ResponseWriter, r *http.Request) {
+	h.CORS(w, r)
+
+	wl := w.(*logger.ResponseLogger)
+	if wl.Err != nil {
+		common.WriteError(w, wl.Err)
+		return
+	}
+
+	var since int64
+	if s := r.URL.Query().Get("since"); s != "" {
+		v, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || v < 0 {
+			common.WriteError(w, common.ErrBadRequest, "since must be a revision number")
+			return
+		}
+		since = v
+	}
+
+	var changes []asset.OrigNameChange
+	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		changes, err = asset.ListOrigNamesSince(ctx, tx, wl.Userid, since, origNamesPage)
+		return err
+	}); err != nil {
+		common.WriteError(w, err, "list original names")
+		return
+	}
+
+	reply := AssetOrigNamesSince{Rev: since, Names: make([]AssetOrigName, 0, len(changes)),
+		More: len(changes) == origNamesPage}
+	for _, c := range changes {
+		reply.Names = append(reply.Names, AssetOrigName{Hash: c.Hash, Name: c.Name})
+		reply.Rev = c.Rev
 	}
 	common.WriteBody(w, reply)
 }

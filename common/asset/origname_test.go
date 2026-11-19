@@ -76,7 +76,7 @@ func TestSetOrigNames(t *testing.T) {
 	}
 	defer db.Close()
 	if _, err := db.Exec(`create table asset(id integer primary key, user_id integer, hash text,
-		orig_name TEXT NOT NULL default '');
+		orig_name TEXT NOT NULL default '', orig_name_rev INTEGER NOT NULL default 0);
 		insert into asset(user_id, hash) values (1, 'aaa'), (1, 'bbb'), (2, 'ccc');
 		update asset set orig_name = 'first.jpg' where hash = 'bbb';`); err != nil {
 		t.Fatal(err)
@@ -103,5 +103,43 @@ func TestSetOrigNames(t *testing.T) {
 	var ccc string
 	if err := db.QueryRow("select orig_name from asset where hash = 'ccc'").Scan(&ccc); err != nil || ccc != "" {
 		t.Errorf("other user's asset got name %q (%v)", ccc, err)
+	}
+
+	// Only the name recorded now is in the feed: bbb's came with the upload (rev 0).
+	list := func(since int64, limit int) []OrigNameChange {
+		var got []OrigNameChange
+		if err := dbx.InQuery(db, func(ctx context.Context, tx *sql.Tx) error {
+			var err error
+			got, err = ListOrigNamesSince(ctx, tx, 1, since, limit)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := list(0, 10); len(got) != 1 || got[0] != (OrigNameChange{Hash: "aaa", Name: "IMG_1.jpg", Rev: 1}) {
+		t.Errorf("feed from 0 = %v", got)
+	}
+
+	// Later names get later revisions, one each, so a page boundary never splits a revision.
+	if _, err := db.Exec(`insert into asset(user_id, hash) values (1, 'eee'), (1, 'fff')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbx.InQuery(db, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := SetOrigNames(ctx, tx, 1, map[string]string{"eee": "E.jpg", "fff": "F.jpg", "aaa": "again.jpg"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	page := list(1, 1)
+	if len(page) != 1 || page[0].Rev != 2 {
+		t.Errorf("first page after 1 = %v", page)
+	}
+	rest := list(page[0].Rev, 10)
+	if len(rest) != 1 || rest[0].Rev != 3 || rest[0].Hash == page[0].Hash {
+		t.Errorf("next page = %v", rest)
+	}
+	if got := list(3, 10); len(got) != 0 {
+		t.Errorf("feed after the last revision = %v", got)
 	}
 }

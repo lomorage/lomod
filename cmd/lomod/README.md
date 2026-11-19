@@ -910,7 +910,7 @@ $ curl -s -X POST -H 'content-type:application/octet-stream' --data-binary @../t
 ```
 
 ## Original file name
-Clients can pass the name the file has on the device with `origname` (URL-encoded). The file is still stored under its date+id name; the original name is kept in the database, listed as `OrigName` in `/assets/merkletree/...` (left out when unknown), and used as the file name of downloads (`Content-Disposition`, with the extension of the file actually served). Older servers ignore the parameter.
+Clients can pass the name the file has on the device with `origname` (URL-encoded). The file is still stored under its date+id name; the original name is kept in the database, listed as `OrigName` in `/assets/merkletree/...` (left out when unknown), and used as the file name of downloads (`Content-Disposition`, with the extension of the file actually served). Older servers ignore the parameter. While an asset's name is unknown its download is cacheable for a day only (`max-age=86400`), since a name may be reported later; once known it is `immutable`.
 ```
 $ curl -s -X POST -H 'content-type:application/octet-stream' --data-binary @./test/img/true_2003_11_23.jpg  "127.0.0.1:8000/asset/4ebf54db04f335ff66bfc1fd982be62bf23fc967?token=573944500&ext=jpg&createtime=2003-11-23T12:00:00Z&origname=IMG_1234.jpg"
 {"Name":"3.jpg","OrigName":"IMG_1234.jpg","Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967",...}
@@ -920,6 +920,12 @@ For assets uploaded without one, clients can report original names in batches of
 ```
 $ curl -s -X POST -H 'content-type:application/json' --data '[{"Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967","Name":"IMG_1234.jpg"}]' "127.0.0.1:8000/assets/names?token=573944500"
 [{"Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967","Name":"IMG_1234.jpg"}]
+```
+
+Names reported this way don't change the merkletree hashes, so other devices fetch them from a feed: each recorded name gets the user's next revision. Pass the `Rev` of the last reply as `since` (0 the first time); `More` is true when another page (of up to 1000) may follow.
+```
+$ curl -s "127.0.0.1:8000/assets/names?since=0&token=573944500"
+{"Rev":1,"Names":[{"Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967","Name":"IMG_1234.jpg"}],"More":false}
 ```
 
 ## List Asset
