@@ -909,6 +909,19 @@ $ curl -s -X POST -H 'content-type:application/octet-stream' --data-binary @../t
 {"Name":"11.mov","Hash":"b12fb8a5bb04738efe66f186a45f0388d8fabff1","Date":"2013-08-08T08:08:08Z","Device":""}
 ```
 
+## Original file name
+Clients can pass the name the file has on the device with `origname` (URL-encoded). The file is still stored under its date+id name; the original name is kept in the database, listed as `OrigName` in `/assets/merkletree/...` (left out when unknown), and used as the file name of downloads (`Content-Disposition`, with the extension of the file actually served). Older servers ignore the parameter.
+```
+$ curl -s -X POST -H 'content-type:application/octet-stream' --data-binary @./test/img/true_2003_11_23.jpg  "127.0.0.1:8000/asset/4ebf54db04f335ff66bfc1fd982be62bf23fc967?token=573944500&ext=jpg&createtime=2003-11-23T12:00:00Z&origname=IMG_1234.jpg"
+{"Name":"3.jpg","OrigName":"IMG_1234.jpg","Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967",...}
+```
+
+For assets uploaded without one, clients can report original names in batches of up to 500. A name already stored is kept (the first one reported wins). The reply lists the name each existing asset now has; hashes with no asset are left out.
+```
+$ curl -s -X POST -H 'content-type:application/json' --data '[{"Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967","Name":"IMG_1234.jpg"}]' "127.0.0.1:8000/assets/names?token=573944500"
+[{"Hash":"4ebf54db04f335ff66bfc1fd982be62bf23fc967","Name":"IMG_1234.jpg"}]
+```
+
 ## List Asset
 List all assets at certain day. It will list all assets at that day ordered by their Hash. Day hash is calculated by concating all asset hash, such as sha1("575db2e474109f982ead09e7f8676680a679c9c07426655f042e8605385cb413de639373b934b18d")="f1d1acc8ffdac4ebdb80d1ad203b512109dcd1fc".
 If the day only has one asset, day hash is calculated from hash of the asset, and they should be different

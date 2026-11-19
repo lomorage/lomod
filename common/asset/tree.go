@@ -16,7 +16,7 @@ import (
 // GetAssetsByDay return all assets in given day
 func GetAssetsByDay(ctx context.Context, tx *sql.Tx, userid, y, m, d int) (types.Day, error) {
 	day := types.Day{Day: d, Assets: []types.Asset{}}
-	stmt, err := tx.Prepare("select id, hash, ext_id, status, create_time from (select * from asset as a inner join (select * from device) as d on a.device_id = d.id where a.user_id = ? and year = ? and month = ? and day = ?) order by hash")
+	stmt, err := tx.Prepare("select id, hash, ext_id, status, create_time, orig_name from (select * from asset as a inner join (select * from device) as d on a.device_id = d.id where a.user_id = ? and year = ? and month = ? and day = ?) order by hash")
 	if err != nil {
 		return day, err
 	}
@@ -37,7 +37,7 @@ func GetAssetsByDay(ctx context.Context, tx *sql.Tx, userid, y, m, d int) (types
 			dt      string
 			a       types.Asset
 		)
-		err := rows.Scan(&assetid, &a.Hash, &extID, &a.Status, &dt)
+		err := rows.Scan(&assetid, &a.Hash, &extID, &a.Status, &dt, &a.OrigName)
 		if err != nil {
 			logrus.Warnf("error scanning db: %v", err)
 		}

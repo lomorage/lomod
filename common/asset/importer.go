@@ -53,15 +53,16 @@ func moveAsset(srcFile, assetFilename string, dt time.Time) error {
 func InsertAsset(ctx context.Context, tx *sql.Tx, userid, deviceid, extid int,
 	a *types.Asset, size, status int, createTime time.Time) (int64, error) {
 	stmt, err := tx.Prepare(`insert into 
-  asset(user_id, hash, year, month, day, ext_id, device_id, latitude, longitude, size, status, create_time, upload_time)
-	values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  asset(user_id, hash, year, month, day, ext_id, device_id, latitude, longitude, size, status, create_time, upload_time,
+    orig_name)
+	values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
 	defer stmt.Close()
 
 	result, err := stmt.ExecContext(ctx, userid, a.Hash, createTime.Year(), createTime.Month(), createTime.Day(),
-		extid, deviceid, a.Latitude, a.Longitude, size, status, createTime, time.Now().UTC())
+		extid, deviceid, a.Latitude, a.Longitude, size, status, createTime, time.Now().UTC(), a.OrigName)
 	if err != nil {
 		return 0, err
 	}
