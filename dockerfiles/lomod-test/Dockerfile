@@ -6,7 +6,9 @@
 # the image needs: git for actions/checkout, xz-utils for actions/setup-node.
 FROM ubuntu:24.04
 
-RUN apt-get update \
+# archive.ubuntu.com can crawl from CI (83 kB/s seen, past the job's timeout); the Azure mirror
+# GitHub's own runners use is close to them and public, so the image builds the same elsewhere.
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources  && apt-get update \
  && apt-get install -y --no-install-recommends \
       libvips42t64 libimage-exiftool-perl ffmpeg \
       ca-certificates git xz-utils \
