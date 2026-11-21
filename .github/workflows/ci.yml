@@ -101,7 +101,11 @@ jobs:
           cache: false # dependencies are vendored
 
       - name: Install native dependencies
-        run: brew install pkg-config vips ffmpeg exiftool dylibbundler zbar
+        run: |
+          brew install pkg-config vips ffmpeg exiftool dylibbundler zbar
+          # Newer vips lists libarchive in its pkg-config Requires, and Homebrew keeps libarchive
+          # keg-only (off the default search path), so cgo's pkg-config can't resolve vips.
+          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
 
       - name: Embed web assets with go.rice
         run: |
