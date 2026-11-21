@@ -274,15 +274,21 @@ func (al *AccessLogger) preProcessReq(w http.ResponseWriter, r *http.Request, st
 		}
 	}
 
-	u, _ := url.Parse(r.URL.String())
+	return addr, loggableURL(r.URL), l
+}
+
+// loggableURL is the request URL as logged: without secrets (token, password) or the file's own
+// name (origname), which can carry a person's name or a document title.
+func loggableURL(ru *url.URL) string {
+	u, _ := url.Parse(ru.String())
 	q := u.Query()
 	if q != nil {
 		delete(q, "token")
 		delete(q, "password")
+		delete(q, common.QueryKeyOrigName)
 		u.RawQuery = encodeQuery(q)
 	}
-
-	return addr, u.String(), l
+	return u.String()
 }
 
 func getUserToken(r *http.Request) (string, error) {

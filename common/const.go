@@ -162,6 +162,8 @@ const (
 	QueryKeyHeight = "height"
 	// QueryKeyExt is extension for asset.
 	QueryKeyExt = "ext"
+	// QueryKeyOrigName is the name the file had on the uploading device.
+	QueryKeyOrigName = "origname"
 	// QueryKeyOrig is to download original asset.
 	QueryKeyOrig = "orig"
 	// QueryKeyICodec is to download asset with specified image codec.

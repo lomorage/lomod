@@ -83,7 +83,9 @@ func (t LomoTime) String() string {
 
 // Asset is response structure for each asset
 type Asset struct {
-	Name      string
+	Name string
+	// OrigName is the file's name on the device that uploaded it, empty if unknown.
+	OrigName  string `json:",omitempty"`
 	Hash      string
 	Device    string
 	Status    int

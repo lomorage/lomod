@@ -149,7 +149,7 @@ func (h *Handler) saveAsset(w http.ResponseWriter, r *http.Request, savedAsset *
 
 	// write file to uploaded user's temp dir
 	baseDir := ""
-	a = &types.Asset{Hash: savedAsset.FinalSHA}
+	a = &types.Asset{Hash: savedAsset.FinalSHA, OrigName: asset.CleanOrigName(q.Get(common.QueryKeyOrigName))}
 	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
 		baseDir, err = user.GetHomedir(ctx, tx, wl.Userid)
 		return err
@@ -520,6 +520,7 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 		aid                                         int
 		masterPath, previewPath, assetPreviewPrefix string
 		extID                                       int
+		origName                                    string
 	)
 	if err := dbx.InQuery(h.db, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
@@ -532,7 +533,14 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 		if err != nil && common.IsErrNoRows(err) {
 			err = common.ErrNotExistAsset
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		// A name is a nicety: a failure to read it must not fail the download.
+		if origName, err = asset.GetOrigName(ctx, tx, aid); err != nil {
+			logrus.Warnf("get original name of asset %d: %v", aid, err)
+		}
+		return nil
 	}); err != nil {
 		common.WriteError(w, err)
 		return
@@ -566,19 +574,30 @@ func (h *Handler) downloadAsset(w http.ResponseWriter, r *http.Request, wl *logg
 	// asset content is addressed by hash (+ codec/dimension query params) and never mutates in
 	// place, so it's safe to let browsers cache it indefinitely without revalidation. Set only
 	// once a file has actually been resolved, so error responses above stay uncached.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-
-	if r.URL.Query().Get(common.QueryKeyOrig) != "" || previewfile == "" {
-		http.ServeFile(w, r, masterfile)
-		return
+	// The exception is the download's name: while the original name is unknown a client may
+	// report it later (POST /assets/names), so that response is kept for a day only. Revalidating
+	// is cheap: ServeFile answers If-Modified-Since with a 304 that carries the new
+	// Content-Disposition. A known name never changes (the first one is kept).
+	// private: the name is the account's own (the same file can be named differently in another
+	// account), and the request is authorized per user, so a shared cache (a proxy in front of a
+	// remote address) must not keep it for others.
+	if origName != "" {
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "private, max-age=86400")
 	}
 
-	// only reply if video or jitt asset is created
-	if ok, err := common.IsFileExist(previewfile); err == nil && ok {
-		http.ServeFile(w, r, previewfile)
-		return
+	served := masterfile
+	if r.URL.Query().Get(common.QueryKeyOrig) == "" && previewfile != "" {
+		// only reply if video or jitt asset is created
+		if ok, err := common.IsFileExist(previewfile); err == nil && ok {
+			served = previewfile
+		}
 	}
-	http.ServeFile(w, r, masterfile)
+	if name := asset.DownloadFilename(origName, served); name != "" {
+		w.Header().Set("Content-Disposition", asset.ContentDisposition(name))
+	}
+	http.ServeFile(w, r, served)
 }
 
 func (h *Handler) parsePreviewDimension(r *http.Request) (width uint, height uint) {

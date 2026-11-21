@@ -28,11 +28,13 @@ type memAsset struct {
 	AspectRatio int // truncated to save memory space
 	Status      int
 	Location    string
+	OrigName    string
 	CreateTime  time.Time
 }
 
 func (ma memAsset) ToAsset() types.Asset {
-	return types.Asset{Name: ma.Name, Hash: ma.Hash, Status: ma.Status, Date: types.LomoTime{Time: ma.CreateTime}}
+	return types.Asset{Name: ma.Name, OrigName: ma.OrigName, Hash: ma.Hash, Status: ma.Status,
+		Date: types.LomoTime{Time: ma.CreateTime}}
 }
 
 func (ma memAsset) ToAssetHash() types.AssetHash {
@@ -118,7 +120,7 @@ func (md *Memdb) GetUserAssets(uid int) (map[int][][]SortedAssets, error) {
 func (md *Memdb) Build(db *sql.DB) error {
 	return dbx.InQuery(db, func(ctx context.Context, tx *sql.Tx) error {
 		stmt, err := tx.Prepare(
-			"select user_id, year, month, day, hash, id, ext_id, create_time, aspect_ratio, status from asset")
+			"select user_id, year, month, day, hash, id, ext_id, create_time, aspect_ratio, status, orig_name from asset")
 		if err != nil {
 			return err
 		}
@@ -143,7 +145,7 @@ func (md *Memdb) Build(db *sql.DB) error {
 			dt     string
 		)
 		for rows.Next() {
-			err := rows.Scan(&uid, &year, &month, &day, &a.Hash, &aid, &eid, &dt, &ar, &status)
+			err := rows.Scan(&uid, &year, &month, &day, &a.Hash, &aid, &eid, &dt, &ar, &status, &a.OrigName)
 			if err != nil {
 				return err
 			}
@@ -204,6 +206,27 @@ func (md *Memdb) ExistByHash(uid int, hash string) *types.Asset {
 		}
 	}
 	return nil
+}
+
+// SetOrigName records an asset's original name, found by its hash. It reports whether the
+// asset was found.
+func (md *Memdb) SetOrigName(uid int, hash, name string) bool {
+	recordU, ok := md.assetsByHash[uid]
+	if !ok {
+		return false
+	}
+	date, ok := recordU[hash]
+	if !ok {
+		return false
+	}
+	assets := md.getAssetsByDay(uid, int(date[0])+common.StartYear, int(date[1]), int(date[2]))
+	for i := range assets {
+		if assets[i].Hash == hash {
+			assets[i].OrigName = name
+			return true
+		}
+	}
+	return false
 }
 
 // ExistByID checks if the asset is exist or not by its ID
@@ -439,7 +462,7 @@ func (md *Memdb) insertHashList(asset types.Asset, uid, year, month, day int) {
 	}
 
 	recordY[month][day] = append(recordY[month][day], memAsset{Name: asset.Name,
-		CreateTime: asset.Date.Time, Hash: asset.Hash})
+		CreateTime: asset.Date.Time, Hash: asset.Hash, OrigName: asset.OrigName})
 
 	sort.Sort(recordY[month][day])
 }
